@@ -1,0 +1,83 @@
+# 日本大学生産工学部 履修登録シミュレータ
+
+GitHub Pagesで公開できる静的Webアプリです。ZIPを展開した直下のファイルを、そのままGitHubリポジトリへpushしてください。
+
+## まず公開する
+
+1. GitHubで空のリポジトリを作成します（例: `course-registration-simulator`）。
+2. このフォルダの中身をリポジトリへ入れます。
+3. ターミナルで次を実行します。`YOUR_NAME` と `YOUR_REPOSITORY` は自分の値へ置き換えてください。
+
+```bash
+git init -b main
+git add .
+git commit -m "Initial release"
+git remote add origin https://github.com/YOUR_NAME/YOUR_REPOSITORY.git
+git push -u origin main
+```
+
+4. GitHubのリポジトリで `Settings` → `Pages` を開きます。
+5. `Build and deployment` の `Source` を **GitHub Actions** にします。
+6. `Actions` タブの「GitHub Pagesへ公開」が成功すると、PagesのURLで利用できます。
+
+リポジトリ名にかかわらず動作するよう、画像・JavaScript・CSSのパスは相対指定です。以後は `main` へのpushごとに自動で検証・公開されます。
+
+## 学生の時間割を端末へ保存する
+
+- 編集内容はブラウザのローカルストレージへ自動保存されます。
+- 「端末に保存」を押すと、履修計画をJSONファイルとしてダウンロードできます。
+- 「保存データを読み込む」から、そのJSONを別のブラウザや端末で復元できます。
+- プライバシー保護のため、ダウンロードするJSONには学籍番号を含めません。
+
+## Boxの時間割Excelを自動反映する
+
+`.github/workflows/refresh-timetable.yml` が、毎日 **日本時間6:17** に次のURLを確認します。
+
+<https://nihon-u.box.com/s/14vswxrknmmi2z06xa3xcjnfl6h8jt8d>
+
+ExcelのSHA-256が前回と違う場合だけ、科目データを作り直して `main` へ自動コミットします。そのコミットをきっかけにGitHub Pagesも再公開されます。
+
+安全のため、次のチェックを通らないデータは公開しません。
+
+- ダウンロード結果がExcel形式であること
+- 必要な列と「学部」シートがあること
+- 抽出科目数が急減していないこと
+- 講義コードの重複や曜日時限の異常がないこと
+- アプリ全体が本番ビルドできること
+
+Box側では、共有リンクを「リンクを知っている全員」かつ「閲覧およびダウンロード可」にしてください。ダウンロードが禁止されている場合、更新処理は失敗しますが、公開中のデータは変更されません。
+
+## 時間割表のURLを変更する
+
+コード編集は不要です。
+
+1. GitHubリポジトリの `Settings` → `Secrets and variables` → `Actions` を開きます。
+2. `Variables` タブで `New repository variable` を押します。
+3. Nameを `TIMETABLE_XLSX_URL`、Valueを新しい共有URLにして保存します。
+4. すぐ確認したい場合は `Actions` →「時間割データを定期更新」→ `Run workflow` を実行します。
+
+年度も変わる場合は、同じ場所に `TIMETABLE_ACADEMIC_YEAR`（例: `2027`）を追加・更新してください。`Run workflow` の入力欄へ一時的なURLや年度を入れて、設定前に試すこともできます。
+
+Boxの共有画面URLでも、更新処理が `download=1` を付けてファイル本体の取得を試みます。組織の設定で直接取得できない場合は、Boxの「リンク設定」に表示されるExcelの直接リンクを `TIMETABLE_XLSX_URL` に指定してください。
+
+> GitHubの仕様上、公開リポジトリで60日間リポジトリ活動がないと、定期実行が自動で無効になる場合があります。`Actions` タブで「時間割データを定期更新」が有効か、学期開始前に確認してください。
+
+## 手元で確認する
+
+Node.js 24以降を用意して、次を実行します。
+
+```bash
+npm ci
+npm run check
+npm run dev
+```
+
+本番用ファイルを作る場合は `npm run build`、ビルド結果を確認する場合は `npm run preview` を使います。
+
+## 更新表示
+
+画面上部にアプリのバージョン、アプリの最終更新日時、時間割データの最終取込日時を表示します。GitHub Pages上のアプリ更新日時は、公開対象コミットの日時から自動設定されます。
+
+## 重要な注意
+
+このアプリは履修計画を立てるための補助ツールです。実際の履修登録には反映されません。時間割を確認した後に、必ずポータルシステムから正式な履修登録を行ってください。

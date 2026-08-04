@@ -1,0 +1,93 @@
+name: 時間割データを定期更新
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+      timezone: "Asia/Tokyo"
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "今回だけ使用する時間割Excelの共有URL（空欄ならRepository variableまたは既定URL）"
+        required: false
+        type: string
+      academic_year:
+        description: "年度（例: 2026。空欄ならRepository variableまたは2026）"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timetable-refresh
+  cancel-in-progress: false
+
+env:
+  TIMETABLE_XLSX_URL: ${{ inputs.source_url || vars.TIMETABLE_XLSX_URL || 'https://nihon-u.box.com/s/14vswxrknmmi2z06xa3xcjnfl6h8jt8d' }}
+  TIMETABLE_ACADEMIC_YEAR: ${{ inputs.academic_year || vars.TIMETABLE_ACADEMIC_YEAR || '2026' }}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ソースを取得
+        uses: actions/checkout@v6
+
+      - name: Node.jsを準備
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 依存関係をインストール
+        run: npm ci
+
+      - name: Boxから時間割Excelを取得
+        run: npm run data:fetch -- "$TIMETABLE_XLSX_URL" .cache/timetable.xlsx
+
+      - name: 変更の有無を確認
+        id: changes
+        shell: bash
+        run: |
+          new_sha="$(sha256sum .cache/timetable.xlsx | cut -d ' ' -f 1)"
+          old_sha="$(tr -d '[:space:]' < data-source/timetable.sha256)"
+          old_url="$(node -p "JSON.parse(require('fs').readFileSync('src/data/update-info.json','utf8')).sourcePageUrl")"
+          echo "new_sha=$new_sha" >> "$GITHUB_OUTPUT"
+          if [ "$new_sha" != "$old_sha" ] || [ "$TIMETABLE_XLSX_URL" != "$old_url" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Excelをアプリ用データへ変換
+        if: steps.changes.outputs.changed == 'true'
+        run: >-
+          npm run data:update -- .cache/timetable.xlsx
+          --source-url "$TIMETABLE_XLSX_URL"
+          --academic-year "$TIMETABLE_ACADEMIC_YEAR"
+          --sha256 "${{ steps.changes.outputs.new_sha }}"
+
+      - name: 取り込み済みハッシュを更新
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: echo "${{ steps.changes.outputs.new_sha }}" > data-source/timetable.sha256
+
+      - name: データとビルドを検証
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          npm run check
+          npm run build
+
+      - name: 更新をmainへ記録
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/course-data.json src/data/update-info.json data-source/timetable.sha256
+          git commit -m "data: 時間割表の更新を反映"
+          git push
+
+      - name: 更新なし
+        if: steps.changes.outputs.changed != 'true'
+        run: echo "前回取り込み時から時間割Excelに変更はありません。"

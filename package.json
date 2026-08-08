@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "node --test scripts/*.test.mjs",
     "data:fetch": "node scripts/fetch-timetable.mjs",
     "data:update": "node scripts/update-timetable.mjs",
     "check": "tsc --noEmit && node scripts/validate-data.mjs"

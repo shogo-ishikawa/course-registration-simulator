@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
+import updateHistoryJson from "./data/update-history.json";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -8,6 +9,11 @@ type CapLimit = 20 | 22 | 24;
 type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
 type BlockingError = { title: string; message: string; courseTitle: string };
+type UpdateHistoryEntry = {
+  updatedAt: string;
+  message: string;
+  source: "automatic" | "manual";
+};
 type SavedScheduleState = {
   department?: string;
   year?: number;
@@ -88,6 +94,7 @@ const updateInfo = updateInfoJson as {
 const buildUpdatedAt = import.meta.env.VITE_BUILD_TIME || updateInfo.appUpdatedAt;
 const buildCommit = import.meta.env.VITE_BUILD_COMMIT || "local";
 const timetableSourcePage = updateInfo.sourcePageUrl;
+const updateHistory = updateHistoryJson as UpdateHistoryEntry[];
 const days: Day[] = ["月", "火", "水", "木", "金", "土"];
 const periods = [1, 2, 3, 4, 5];
 const semesterDetails: Record<Semester, { label: string; quarters: number[] }> = {
@@ -154,6 +161,23 @@ function formatUpdateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatHistoryEntry(entry: UpdateHistoryEntry) {
+  const date = new Date(entry.updatedAt);
+  if (Number.isNaN(date.getTime())) return entry.message;
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `[${value("year")}年${value("month")}月${value("day")}日 ${value("hour")}:${value("minute")}] ${entry.message}`;
 }
 
 function asCapLimit(value: unknown): CapLimit {
@@ -286,6 +310,7 @@ export default function Home() {
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [lastBlockedIssue, setLastBlockedIssue] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -869,6 +894,13 @@ export default function Home() {
         </div>
         <div className="header-badges">
           <span className="data-badge">{courseData.meta.academicYear}年度データ</span>
+          <button
+            type="button"
+            className="history-button"
+            onClick={() => setUpdateHistoryOpen(true)}
+          >
+            更新履歴
+          </button>
           <div className="text-size-control" role="group" aria-label="文字サイズ">
             <span>文字</span>
             {(["small", "normal", "large"] as TextSize[]).map((size, index) => (
@@ -888,6 +920,47 @@ export default function Home() {
           </a>
         </div>
       </header>
+
+      {updateHistoryOpen && (
+        <div
+          className="modal-layer modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setUpdateHistoryOpen(false);
+          }}
+        >
+          <section
+            className="detail-modal update-history-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="update-history-title"
+          >
+            <button
+              type="button"
+              className="modal-close"
+              aria-label="更新履歴を閉じる"
+              onClick={() => setUpdateHistoryOpen(false)}
+            >
+              ×
+            </button>
+            <p className="eyebrow">UPDATE HISTORY</p>
+            <h2 id="update-history-title">更新履歴</h2>
+            <p className="update-history-description">
+              時間割データとアプリに反映された主な更新を表示しています。
+            </p>
+            <ol className="update-history-list">
+              {updateHistory.map((entry, index) => (
+                <li key={`${entry.updatedAt}-${index}`}>
+                  <span className={`history-source ${entry.source}`}>
+                    {entry.source === "automatic" ? "自動" : "手動"}
+                  </span>
+                  <strong>{formatHistoryEntry(entry)}</strong>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      )}
 
       <section className="official-registration-notice" role="alert">
         <span className="notice-icon" aria-hidden="true">!</span>
@@ -926,10 +999,29 @@ export default function Home() {
         <div className="intro-copy">
           <p className="eyebrow light">BUILD YOUR SCHEDULE</p>
           <h1>迷わず組める、<br />あなたの時間割。</h1>
-          <p>
+          <p className="intro-description">
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
           </p>
+          <aside className="intro-update-history" aria-labelledby="intro-update-history-title">
+            <div className="intro-update-history-heading">
+              <div>
+                <span>WHAT'S NEW</span>
+                <h2 id="intro-update-history-title">最近の更新</h2>
+              </div>
+              <button type="button" onClick={() => setUpdateHistoryOpen(true)}>
+                すべて見る
+              </button>
+            </div>
+            <ol>
+              {updateHistory.slice(0, 3).map((entry, index) => (
+                <li key={`${entry.updatedAt}-summary-${index}`}>
+                  <i aria-hidden="true" />
+                  <span>{formatHistoryEntry(entry)}</span>
+                </li>
+              ))}
+            </ol>
+          </aside>
         </div>
 
         <div className="profile-card">

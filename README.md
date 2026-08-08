@@ -31,7 +31,7 @@ git push -u origin main
 
 ## Boxの時間割Excelを自動反映する
 
-`.github/workflows/refresh-timetable.yml` が、毎日 **日本時間6:17** に次のURLを確認します。
+`.github/workflows/refresh-timetable.yml` が、既定では毎日 **日本時間6:17** に次のURLを確認します。
 
 <https://nihon-u.box.com/s/14vswxrknmmi2z06xa3xcjnfl6h8jt8d>
 
@@ -62,6 +62,27 @@ Boxの共有画面URLでも、更新処理が `download=1` を付けてファイ
 
 > GitHubの仕様上、公開リポジトリで60日間リポジトリ活動がないと、定期実行が自動で無効になる場合があります。`Actions` タブで「時間割データを定期更新」が有効か、学期開始前に確認してください。
 
+## Boxを確認する頻度を変更する
+
+GitHubリポジトリの `Settings` → `Secrets and variables` → `Actions` → `Variables` で、
+Repository variable `TIMETABLE_CHECK_INTERVAL_HOURS` を追加してください。設定できる値は
+`1`, `2`, `3`, `4`, `6`, `8`, `12`, `24`（時間）で、未設定時は `24` です。
+確認時刻は日本時間6:17を基準に指定間隔で計算されます。手動の `Run workflow` は頻度設定に
+かかわらず常に確認します。
+
+## 更新履歴を追加する
+
+BoxのExcelに変更があり、科目データへ正常に反映された場合は「時間割表を更新」という履歴が
+自動追加されます。手動の履歴は次のコマンドで追加できます。
+
+```bash
+npm run history:add -- --message "検索画面の説明を改善"
+```
+
+日時を指定する場合は `--date "2026-08-08T12:00:00+09:00"` も追加できます。生成された
+`src/data/update-history.json` を他の変更とともにコミットしてください。履歴は画面上部の
+「更新履歴」ボタンから、`[YYYY年MM月DD日 HH:MM] 更新内容` の形式で確認できます。
+
 ## 手元で確認する
 
 Node.js 24以降を用意して、次を実行します。
@@ -76,7 +97,7 @@ npm run dev
 
 ## 更新表示
 
-画面上部にアプリのバージョン、アプリの最終更新日時、時間割データの最終取込日時を表示します。GitHub Pages上のアプリ更新日時は、公開対象コミットの日時から自動設定されます。
+画面上部にアプリのバージョン、アプリの最終更新日時、時間割データの最終取込日時と更新履歴を表示します。GitHub Pages上のアプリ更新日時は、公開対象コミットの日時から自動設定されます。
 
 ## 重要な注意
 

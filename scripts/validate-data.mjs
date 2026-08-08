@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 
 const courseData = JSON.parse(await fs.readFile("src/data/course-data.json", "utf8"));
 const updateInfo = JSON.parse(await fs.readFile("src/data/update-info.json", "utf8"));
+const updateHistory = JSON.parse(await fs.readFile("src/data/update-history.json", "utf8"));
 const errors = [];
 const ids = new Set();
 
@@ -27,6 +28,19 @@ try {
   new URL(updateInfo.sourcePageUrl);
 } catch {
   errors.push("sourcePageUrl が不正です");
+}
+if (!Array.isArray(updateHistory) || updateHistory.length === 0) {
+  errors.push("更新履歴がありません");
+} else {
+  for (const [index, entry] of updateHistory.entries()) {
+    if (!entry.message?.trim()) errors.push(`更新履歴${index + 1}件目の内容がありません`);
+    if (Number.isNaN(new Date(entry.updatedAt).getTime())) {
+      errors.push(`更新履歴${index + 1}件目の日時が不正です`);
+    }
+    if (!["automatic", "manual"].includes(entry.source)) {
+      errors.push(`更新履歴${index + 1}件目の種別が不正です`);
+    }
+  }
 }
 
 if (errors.length) {

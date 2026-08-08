@@ -938,6 +938,51 @@ export default function Home() {
     }
   }
 
+  function scheduleShareText() {
+    const rows = scheduleExportRows();
+    const heading = `${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`;
+    return [
+      heading,
+      "",
+      ...rows.map((row) =>
+        `[${row.学期}・${row.曜日時限}] ${row.科目名}（${row.キャンパス}${row.教室 ? `・${row.教室}` : ""}）`,
+      ),
+      "",
+      "日本大学生産工学部 履修登録シミュレータで作成",
+    ].join("\n");
+  }
+
+  async function shareSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("共有する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    const title = `${courseData.meta.academicYear}年度の時間割`;
+    const text = scheduleShareText();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text });
+        setNotice("スマートフォンの共有メニューへ時間割を送りました。");
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        setNotice("この端末では共有メニューを使えないため、時間割をクリップボードへコピーしました。");
+      } else {
+        throw new Error("Sharing is unavailable");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setNotice("時間割を共有できませんでした。ExcelまたはCSV出力をお試しください。");
+    }
+  }
+
+  function printSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("印刷する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    window.print();
+  }
+
   async function importScheduleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1397,6 +1442,12 @@ export default function Home() {
                   {scheduleExporting ? "出力中…" : "時間割を出力"}
                 </button>
               </div>
+              <button className="soft-button share-schedule-button" onClick={shareSchedule}>
+                スマホへ共有
+              </button>
+              <button className="soft-button print-schedule-button" onClick={printSchedule}>
+                A4で印刷
+              </button>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
               </button>
@@ -1694,6 +1745,36 @@ export default function Home() {
             <p>科目の「履修制限」と学籍番号別のクラス表を照合してください。このシミュレータは確定登録の代わりにはなりません。</p>
           </div>
         </aside>
+      </section>
+
+      <section className="printable-schedule" aria-hidden="true">
+        <header>
+          <div>
+            <p>NIHON UNIVERSITY · COLLEGE OF INDUSTRIAL TECHNOLOGY</p>
+            <h1>{courseData.meta.academicYear}年度 時間割表</h1>
+          </div>
+          <dl>
+            <div><dt>所属</dt><dd>{courseData.departments[department].name}</dd></div>
+            <div><dt>学年</dt><dd>{year}年</dd></div>
+          </dl>
+        </header>
+        <table>
+          <thead>
+            <tr>
+              <th>学期</th><th>曜日時限</th><th>科目名</th><th>担当教員</th>
+              <th>キャンパス</th><th>教室</th><th>単位</th><th>区分</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scheduleExportRows().map((row) => (
+              <tr key={`${row.講義コード}-${row.学期}`}>
+                <td>{row.学期}</td><td>{row.曜日時限}</td><td>{row.科目名}</td><td>{row.担当教員}</td>
+                <td>{row.キャンパス}</td><td>{row.教室}</td><td>{row.単位数}</td><td>{row.区分}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <footer>出力日時：{formatUpdateTime(new Date().toISOString())}　※正式な履修登録内容はポータルで確認してください。</footer>
       </section>
 
       <section className="rules-section">

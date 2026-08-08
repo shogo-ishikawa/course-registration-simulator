@@ -1,5 +1,10 @@
 [
   {
+    "updatedAt": "2026-08-08T05:55:53.845Z",
+    "message": "v1.2.1を更新（スマホ共有とA4印刷を追加）",
+    "source": "manual"
+  },
+  {
     "updatedAt": "2026-08-08T04:23:50.040Z",
     "message": "v1.2.0を更新（時間割のExcel・CSV出力を追加）",
     "source": "manual"

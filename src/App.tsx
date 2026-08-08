@@ -325,6 +325,7 @@ export default function Home() {
   const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
   const [scheduleExportFormat, setScheduleExportFormat] = useState<ScheduleExportFormat>("xlsx");
   const [scheduleExporting, setScheduleExporting] = useState(false);
+  const [printSemester, setPrintSemester] = useState<Semester>("spring");
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -953,6 +954,14 @@ export default function Home() {
     );
   }
 
+  function coursesAtQuarterSlot(targetQuarter: number, day: Day, period: number) {
+    return selectedCourses.filter(
+      (course) =>
+        course.quarters.includes(targetQuarter) &&
+        course.slots.some((slot) => slot.day === day && slot.period === period),
+    );
+  }
+
   function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
     const lines: string[] = [];
     let line = "";
@@ -1053,6 +1062,26 @@ export default function Home() {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setNotice("共有用の時間割画像を作成できませんでした。もう一度お試しください。");
     }
+  }
+
+  function emailSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("メールで送る科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    const lines = (["spring", "fall"] as Semester[]).flatMap((targetSemester) => [
+      `【${semesterDetails[targetSemester].label}】`,
+      ...periods.map((period) =>
+        `${period}限｜${days.map((day) => {
+          const titles = coursesAtExportSlot(targetSemester, day, period).map((course) => course.title);
+          return `${day}:${titles.join("・") || "―"}`;
+        }).join("｜")}`,
+      ),
+      "",
+    ]);
+    const subject = `${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`;
+    const body = [subject, "", ...lines, "日本大学生産工学部 履修登録シミュレータで作成"].join("\n");
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
 
   function printSchedule() {
@@ -1525,9 +1554,18 @@ export default function Home() {
               <button className="soft-button share-schedule-button" onClick={shareSchedule}>
                 スマホへ共有
               </button>
-              <button className="soft-button print-schedule-button" onClick={printSchedule}>
-                印刷
-              </button>
+              <button className="soft-button email-schedule-button" onClick={emailSchedule}>メールで送信</button>
+              <div className="print-schedule-control">
+                <select
+                  value={printSemester}
+                  onChange={(event) => setPrintSemester(event.target.value as Semester)}
+                  aria-label="印刷する学期"
+                >
+                  <option value="spring">前期（1Q・2Q）</option>
+                  <option value="fall">後期（3Q・4Q）</option>
+                </select>
+                <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
+              </div>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
               </button>
@@ -1831,16 +1869,16 @@ export default function Home() {
         <header>
           <div>
             <p>NIHON UNIVERSITY · COLLEGE OF INDUSTRIAL TECHNOLOGY</p>
-            <h1>{courseData.meta.academicYear}年度 時間割表</h1>
+            <h1>{courseData.meta.academicYear}年度 {semesterDetails[printSemester].label}時間割表</h1>
           </div>
           <dl>
             <div><dt>所属</dt><dd>{courseData.departments[department].name}</dd></div>
             <div><dt>学年</dt><dd>{year}年</dd></div>
           </dl>
         </header>
-        {(["spring", "fall"] as Semester[]).map((targetSemester) => (
-          <section className="print-semester" key={targetSemester}>
-            <h2>{semesterDetails[targetSemester].label}</h2>
+        {semesterDetails[printSemester].quarters.map((targetQuarter) => (
+          <section className="print-semester" key={targetQuarter}>
+            <h2>{targetQuarter}Q</h2>
             <table>
               <thead><tr><th>時限</th>{days.map((day) => <th key={day}>{day}曜日</th>)}</tr></thead>
               <tbody>
@@ -1849,7 +1887,7 @@ export default function Home() {
                     <th>{period}限</th>
                     {days.map((day) => (
                       <td key={day}>
-                        {coursesAtExportSlot(targetSemester, day, period).map((course) => (
+                        {coursesAtQuarterSlot(targetQuarter, day, period).map((course) => (
                           <div className="print-course" key={course.id}>
                             <strong>{course.title}</strong>
                             <small>{course.term}・{course.campus}{course.room ? `・${course.room}` : ""}</small>

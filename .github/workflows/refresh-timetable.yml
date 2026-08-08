@@ -43,9 +43,9 @@ jobs:
             exit 0
           fi
           case "$TIMETABLE_CHECK_INTERVAL_HOURS" in
-            1|2|3|4|6|8|12|24|48|72|168) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
+            1|2|3|4|6|8|12|24|48|72|168|672) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
             *)
-              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168 のいずれかにしてください。" >&2
+              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168, 672 のいずれかにしてください。" >&2
               exit 1
               ;;
           esac

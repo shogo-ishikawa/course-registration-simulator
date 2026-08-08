@@ -8,6 +8,7 @@ type Semester = "spring" | "fall";
 type CapLimit = 20 | 22 | 24;
 type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
+type ScheduleExportFormat = "xlsx" | "csv";
 type BlockingError = { title: string; message: string; courseTitle: string };
 type UpdateHistoryEntry = {
   updatedAt: string;
@@ -322,6 +323,8 @@ export default function Home() {
   const [lastBlockedIssue, setLastBlockedIssue] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
+  const [scheduleExportFormat, setScheduleExportFormat] = useState<ScheduleExportFormat>("xlsx");
+  const [scheduleExporting, setScheduleExporting] = useState(false);
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -823,6 +826,118 @@ export default function Home() {
     setNotice("履修計画を端末へ保存しました。学籍番号は保存ファイルに含めていません。");
   }
 
+  function exportSemesterLabel(course: Course) {
+    const assigned = courseSemesterAssignments[course.id];
+    if (assigned) return semesterDetails[assigned].label;
+    const inSpring = course.quarters.some((item) => semesterDetails.spring.quarters.includes(item));
+    const inFall = course.quarters.some((item) => semesterDetails.fall.quarters.includes(item));
+    if (inSpring && inFall) return "通年";
+    if (inSpring) return "前期";
+    if (inFall) return "後期";
+    return course.term || "要確認";
+  }
+
+  function scheduleExportRows() {
+    return selectedCourses
+      .map((course) => ({
+        学期: exportSemesterLabel(course),
+        開講期間: course.term,
+        講義コード: course.id,
+        科目名: course.title,
+        曜日時限: slotLabel(course),
+        担当教員: course.instructors,
+        キャンパス: course.campus,
+        教室: course.room,
+        単位数: courseCredits(course, department) ?? "要確認",
+        区分: selectionSources[course.id] === "required" ? "必修" : "選択",
+      }))
+      .sort((a, b) =>
+        a.学期.localeCompare(b.学期, "ja") ||
+        a.曜日時限.localeCompare(b.曜日時限, "ja") ||
+        a.科目名.localeCompare(b.科目名, "ja"),
+      );
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+  }
+
+  async function exportSchedule() {
+    const rows = scheduleExportRows();
+    if (!rows.length) {
+      setNotice("出力する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+
+    const safeDepartment = courseData.departments[department].name.replace(/[^\p{L}\p{N}-]+/gu, "-");
+    const basename = `時間割-${courseData.meta.academicYear}-${safeDepartment}-${year}年`;
+    setScheduleExporting(true);
+    try {
+      if (scheduleExportFormat === "csv") {
+        const headers = Object.keys(rows[0]) as (keyof (typeof rows)[number])[];
+        const csvCell = (rawValue: string | number) => {
+          let value = String(rawValue);
+          if (/^[=+\-@]/.test(value)) value = `'${value}`;
+          return `"${value.replaceAll('"', '""')}"`;
+        };
+        const csv = [
+          headers.map(csvCell).join(","),
+          ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(",")),
+        ].join("\r\n");
+        downloadBlob(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }), `${basename}.csv`);
+      } else {
+        const { default: ExcelJS } = await import("exceljs");
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = "日本大学生産工学部 履修登録シミュレータ";
+        workbook.created = new Date();
+        const worksheet = workbook.addWorksheet("時間割");
+        worksheet.addRow([`${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`]);
+        worksheet.mergeCells(1, 1, 1, 10);
+        worksheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
+        worksheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0C2340" } };
+        worksheet.getCell("A1").alignment = { vertical: "middle" };
+        worksheet.getRow(1).height = 28;
+        worksheet.addRow([]);
+        worksheet.columns = [
+          { key: "学期", width: 10 }, { key: "開講期間", width: 14 }, { key: "講義コード", width: 15 },
+          { key: "科目名", width: 34 }, { key: "曜日時限", width: 18 }, { key: "担当教員", width: 24 },
+          { key: "キャンパス", width: 14 }, { key: "教室", width: 18 }, { key: "単位数", width: 10 }, { key: "区分", width: 10 },
+        ];
+        const headerRow = worksheet.addRow(Object.keys(rows[0]));
+        headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2457D6" } };
+        rows.forEach((row) => worksheet.addRow(Object.values(row)));
+        worksheet.views = [{ state: "frozen", ySplit: 3 }];
+        worksheet.autoFilter = { from: "A3", to: "J3" };
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber >= 3) {
+            row.alignment = { vertical: "middle", wrapText: true };
+            row.eachCell((cell) => {
+              cell.border = { bottom: { style: "thin", color: { argb: "FFDCE3ED" } } };
+            });
+          }
+        });
+        const buffer = await workbook.xlsx.writeBuffer();
+        downloadBlob(
+          new Blob([new Uint8Array(buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+          `${basename}.xlsx`,
+        );
+      }
+      setNotice(`${scheduleExportFormat === "xlsx" ? "Excel" : "CSV"}形式で時間割を出力しました。`);
+    } catch {
+      setNotice("時間割を出力できませんでした。もう一度お試しください。");
+    } finally {
+      setScheduleExporting(false);
+    }
+  }
+
   async function importScheduleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1266,6 +1381,22 @@ export default function Home() {
               <h2>{courseData.departments[department].name}・{year}年・{semesterLabel}</h2>
             </div>
             <div className="toolbar-actions">
+              <div className="schedule-export-control">
+                <label>
+                  <span>出力形式</span>
+                  <select
+                    value={scheduleExportFormat}
+                    onChange={(event) => setScheduleExportFormat(event.target.value as ScheduleExportFormat)}
+                    aria-label="時間割の出力形式"
+                  >
+                    <option value="xlsx">Excel</option>
+                    <option value="csv">CSV</option>
+                  </select>
+                </label>
+                <button className="primary-button" onClick={exportSchedule} disabled={scheduleExporting}>
+                  {scheduleExporting ? "出力中…" : "時間割を出力"}
+                </button>
+              </div>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
               </button>

@@ -66,6 +66,8 @@ a { color: inherit; text-decoration: none; }
 .header-badges { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; }
 .data-badge { padding: 7px 11px; border-radius: 999px; color: #154398; background: var(--blue-soft); }
 .header-badges a { padding: 8px 2px; border-bottom: 1px solid var(--ink); }
+.history-button { padding: 7px 11px; border: 1px solid #c8d3e2; border-radius: 9px; color: #243752; background: white; cursor: pointer; font-size: 11px; font-weight: 900; }
+.history-button:hover { color: var(--blue); border-color: #8fa9d5; background: #f6f9ff; }
 .text-size-control { padding: 3px; display: flex; align-items: center; gap: 3px; border: 1px solid #cfd8e5; border-radius: 10px; background: #f5f7fa; }
 .text-size-control > span { margin: 0 4px; color: #667389; font-size: 9px; }
 .text-size-control button { min-width: 30px; height: 28px; padding: 0 5px; border: 0; border-radius: 7px; background: transparent; color: #56647a; cursor: pointer; font-size: 10px; font-weight: 900; }
@@ -119,7 +121,15 @@ a { color: inherit; text-decoration: none; }
     linear-gradient(122deg, #071b37, #142f5b 65%, #1f4583);
 }
 .intro-copy h1 { margin: 12px 0 18px; font-size: clamp(38px, 4vw, 64px); line-height: 1.12; letter-spacing: -.045em; }
-.intro-copy > p:last-child { max-width: 560px; margin: 0; color: #d6e1f5; line-height: 1.9; font-size: 15px; }
+.intro-description { max-width: 560px; margin: 0; color: #d6e1f5; line-height: 1.9; font-size: 15px; }
+.intro-update-history { max-width: 620px; margin-top: 26px; padding: 18px 20px; border: 1px solid rgba(166, 193, 239, .3); border-radius: 16px; background: rgba(3, 18, 43, .44); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.intro-update-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.intro-update-history-heading span { color: #8eafe8; font-size: 8px; font-weight: 1000; letter-spacing: .16em; }
+.intro-update-history-heading h2 { margin: 3px 0 0; color: white; font-size: 15px; }
+.intro-update-history-heading button { padding: 6px 9px; border: 1px solid rgba(177, 201, 240, .45); border-radius: 8px; color: #e8f0ff; background: rgba(255,255,255,.07); cursor: pointer; font-size: 9px; font-weight: 900; }
+.intro-update-history ol { margin: 14px 0 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.intro-update-history li { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 9px; color: #dbe7fa; font-size: 10px; line-height: 1.55; }
+.intro-update-history li i { width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: #70a0f5; box-shadow: 0 0 0 3px rgba(112,160,245,.15); }
 .profile-card {
   padding: 24px;
   background: rgba(255,255,255,.98);
@@ -136,6 +146,11 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid #ccd5e2; color: var(--ink); background: white; outline: none;
 }
 .profile-card select:focus, .profile-card input:focus, .search-box input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(36,87,214,.12); }
+.department-guidance-link { min-height: 64px; margin: -6px 0 18px; padding: 11px 13px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #a9c0e9; border-radius: 11px; color: #153f99; background: #f3f7ff; }
+.department-guidance-link:hover { border-color: #628ad6; background: #e8f0ff; }
+.department-guidance-link span { color: #6780aa; font-size: 8px; font-weight: 1000; letter-spacing: .08em; }
+.department-guidance-link strong { margin-top: 3px; font-size: 10px; line-height: 1.45; }
+.department-guidance-link small { margin-top: 3px; color: #2457d6; font-size: 8px; font-weight: 900; }
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; border-radius: 11px; background: #eef2f7; }
 .segmented button { height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 800; color: #6f7a8e; }
 .segmented button.active { background: white; color: var(--blue); box-shadow: 0 2px 8px rgba(20,33,61,.1); }
@@ -260,6 +275,19 @@ a { color: inherit; text-decoration: none; }
 .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .section-toolbar h2, .required-panel h2, .rules-section h2 { margin: 5px 0 0; font-size: 22px; letter-spacing: -.02em; }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.schedule-export-control { padding: 4px; display: flex; align-items: end; gap: 6px; border: 1px solid #b9cae6; border-radius: 12px; background: #f5f8ff; }
+.schedule-export-control label { display: grid; gap: 2px; }
+.schedule-export-control label span { padding-left: 3px; color: #64738a; font-size: 8px; font-weight: 900; }
+.schedule-export-control select { min-width: 82px; height: 34px; padding: 0 8px; border: 1px solid #c6d2e3; border-radius: 8px; color: var(--ink); background: white; }
+.schedule-export-control .primary-button { min-height: 34px; padding-inline: 12px; }
+.schedule-export-control .primary-button:disabled { opacity: .65; cursor: wait; }
+.share-schedule-button { color: #174c3e; border-color: #9fd1c2; background: var(--success-soft); }
+.email-schedule-button { color: #174880; border-color: #a8c7e8; background: #eef7ff; }
+.print-schedule-button { color: #47336d; border-color: #c8b9e2; background: #f5f0ff; }
+.print-schedule-control { padding: 3px; display: flex; gap: 4px; border: 1px solid #c8b9e2; border-radius: 11px; background: #f8f5ff; }
+.print-schedule-control select { min-width: 126px; padding: 0 7px; border: 0; color: #47336d; background: transparent; font-size: 10px; font-weight: 800; }
+.print-schedule-control .print-schedule-button { min-height: 34px; border: 0; background: #e8def8; }
+.printable-schedule { display: none; }
 .file-button { position: relative; cursor: pointer; }
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .save-button { color: #175444; border-color: #a8d4c8; background: #edf9f5; }
@@ -427,7 +455,16 @@ a { color: inherit; text-decoration: none; }
 .empty-results p { font-size: 11px; }
 
 .modal-backdrop { display: grid; place-items: center; padding: 20px; }
+.modal-layer { position: fixed; inset: 0; z-index: 100; background: rgba(5, 16, 35, .68); backdrop-filter: blur(4px); }
 .detail-modal { position: relative; width: min(620px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 30px; border-radius: 22px; background: white; box-shadow: var(--shadow); }
+.update-history-modal { width: min(720px, 100%); }
+.update-history-description { margin: 8px 48px 24px 0; color: var(--ink-soft); font-size: 12px; line-height: 1.7; }
+.update-history-list { margin: 0; padding: 0; display: grid; gap: 9px; list-style: none; }
+.update-history-list li { padding: 14px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 11px; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc; }
+.update-history-list strong { font-size: 12px; line-height: 1.6; }
+.history-source { min-width: 38px; padding: 5px 7px; border-radius: 7px; text-align: center; font-size: 9px; font-weight: 1000; }
+.history-source.automatic { color: #155b49; background: #dff5ed; }
+.history-source.manual { color: #1749ad; background: var(--blue-soft); }
 .modal-close { position: absolute; top: 18px; right: 18px; }
 .detail-campus { width: fit-content; margin-bottom: 22px; padding: 7px 10px; border-radius: 8px; display: flex; gap: 9px; font-size: 9px; }
 .detail-campus strong { padding-left: 9px; border-left: 1px solid rgba(20,33,61,.16); }
@@ -469,6 +506,7 @@ a { color: inherit; text-decoration: none; }
   .brand-title { font-size: 14px; }
   .header-badges { font-size: 11px; }
   .header-badges { gap: 7px; }
+  .history-button { padding-inline: 8px; font-size: 10px; }
   .text-size-control > span { display: none; }
   .text-size-control button { min-width: 27px; height: 27px; padding: 0 3px; }
   .official-registration-notice { grid-template-columns: auto 1fr; align-items: start; }
@@ -496,6 +534,11 @@ a { color: inherit; text-decoration: none; }
   .section-toolbar { align-items: flex-start; flex-direction: column; }
   .toolbar-actions { width: 100%; justify-content: flex-start; }
   .toolbar-actions .soft-button, .toolbar-actions .text-button { flex: 1 1 calc(50% - 8px); }
+  .schedule-export-control { width: 100%; }
+  .schedule-export-control label { flex: 1; }
+  .schedule-export-control select { width: 100%; }
+  .print-schedule-control { width: 100%; }
+  .print-schedule-control select { flex: 1; }
   .quarter-tabs { grid-template-columns: repeat(2, 1fr); }
   .campus-legend { justify-content: flex-start; flex-wrap: wrap; }
   .campus-legend span { flex: 1 1 calc(50% - 9px); justify-content: center; }
@@ -511,13 +554,32 @@ a { color: inherit; text-decoration: none; }
   .detail-grid > div { border-right: 0; border-bottom: 1px solid var(--line) !important; }
   .detail-grid > div:last-child { border-bottom: 0 !important; }
   .course-drawer { padding: 22px 16px; }
+  .update-history-list li { grid-template-columns: 1fr; }
+  .history-source { width: fit-content; }
 }
 
 @media print {
-  .site-header, .official-registration-notice, .update-status-strip, .intro-panel, .required-panel, .rules-section, .site-footer, .toolbar-actions, .local-save-note, .empty-slot small, .remove-course, .alert-banner { display: none !important; }
+  @page { size: A4 portrait; margin: 9mm; }
   body, .app-shell { background: white; }
-  .summary-strip, .workspace { padding: 12px; }
-  .workspace { display: block; }
-  .schedule-panel { box-shadow: none; border: 0; padding: 0; }
-  .timetable-grid { min-width: 0; }
+  .app-shell > *:not(.printable-schedule) { display: none !important; }
+  .printable-schedule { display: block !important; color: #111; font-family: "Yu Gothic", sans-serif; }
+  .printable-schedule header { padding-bottom: 3mm; display: flex; align-items: end; justify-content: space-between; border-bottom: 2px solid #0c2340; }
+  .printable-schedule header p { margin: 0 0 2mm; color: #44546a; font-size: 7pt; letter-spacing: .08em; }
+  .printable-schedule header h1 { margin: 0; font-size: 18pt; }
+  .printable-schedule dl { margin: 0; display: flex; gap: 6mm; }
+  .printable-schedule dl div { display: flex; gap: 2mm; }
+  .printable-schedule dt { color: #64748b; font-size: 8pt; }
+  .printable-schedule dd { margin: 0; font-size: 9pt; font-weight: 700; }
+  .print-semester { margin-top: 3mm; break-inside: avoid; }
+  .print-semester h2 { margin: 0 0 2mm; font-size: 11pt; }
+  .printable-schedule table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7pt; }
+  .printable-schedule th { padding: 2.2mm 1.5mm; color: white; background: #2457d6 !important; border: 1px solid #1d46ac; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .printable-schedule td { height: 18mm; padding: 1mm; border: 1px solid #aeb8c5; overflow-wrap: anywhere; vertical-align: top; }
+  .printable-schedule tbody tr:nth-child(even) { background: #f3f6fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .printable-schedule th:first-child { width: 7%; }
+  .print-course + .print-course { margin-top: 1mm; padding-top: 1mm; border-top: 1px dashed #9ca8b8; }
+  .print-course strong, .print-course small { display: block; }
+  .print-course strong { font-size: 7pt; line-height: 1.25; }
+  .print-course small { margin-top: .5mm; color: #536176; font-size: 5.8pt; line-height: 1.2; }
+  .printable-schedule footer { margin-top: 4mm; color: #596579; font-size: 7pt; text-align: right; }
 }

@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
+import updateHistoryJson from "./data/update-history.json";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
 type CapLimit = 20 | 22 | 24;
 type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
+type ScheduleExportFormat = "xlsx" | "csv";
 type BlockingError = { title: string; message: string; courseTitle: string };
+type UpdateHistoryEntry = {
+  updatedAt: string;
+  message: string;
+  source: "automatic" | "manual";
+};
 type SavedScheduleState = {
   department?: string;
   year?: number;
@@ -88,6 +95,18 @@ const updateInfo = updateInfoJson as {
 const buildUpdatedAt = import.meta.env.VITE_BUILD_TIME || updateInfo.appUpdatedAt;
 const buildCommit = import.meta.env.VITE_BUILD_COMMIT || "local";
 const timetableSourcePage = updateInfo.sourcePageUrl;
+const updateHistory = updateHistoryJson as UpdateHistoryEntry[];
+const firstYearGuidanceUrls: Record<string, string> = {
+  機械: "https://sites.google.com/view/mimomi-guidance/home/mech_engr",
+  電気: "https://sites.google.com/view/mimomi-guidance/home/elec_eng",
+  土木: "https://sites.google.com/view/mimomi-guidance/home/civil_engr",
+  建築: "https://sites.google.com/view/mimomi-guidance/home/arch_engr",
+  応化: "https://sites.google.com/view/mimomi-guidance/home/amc",
+  ＭＡ: "https://sites.google.com/view/mimomi-guidance/home/ma",
+  数情: "https://sites.google.com/view/mimomi-guidance/home/math_engr",
+  環境: "https://sites.google.com/view/mimomi-guidance/home/sust_engr",
+  創生: "https://sites.google.com/view/mimomi-guidance/home/cd",
+};
 const days: Day[] = ["月", "火", "水", "木", "金", "土"];
 const periods = [1, 2, 3, 4, 5];
 const semesterDetails: Record<Semester, { label: string; quarters: number[] }> = {
@@ -154,6 +173,23 @@ function formatUpdateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatHistoryEntry(entry: UpdateHistoryEntry) {
+  const date = new Date(entry.updatedAt);
+  if (Number.isNaN(date.getTime())) return entry.message;
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `[${value("year")}年${value("month")}月${value("day")}日 ${value("hour")}:${value("minute")}] ${entry.message}`;
 }
 
 function asCapLimit(value: unknown): CapLimit {
@@ -286,6 +322,10 @@ export default function Home() {
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [lastBlockedIssue, setLastBlockedIssue] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
+  const [scheduleExportFormat, setScheduleExportFormat] = useState<ScheduleExportFormat>("xlsx");
+  const [scheduleExporting, setScheduleExporting] = useState(false);
+  const [printSemester, setPrintSemester] = useState<Semester>("spring");
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -787,6 +827,271 @@ export default function Home() {
     setNotice("履修計画を端末へ保存しました。学籍番号は保存ファイルに含めていません。");
   }
 
+  function exportSemesterLabel(course: Course) {
+    const assigned = courseSemesterAssignments[course.id];
+    if (assigned) return semesterDetails[assigned].label;
+    const inSpring = course.quarters.some((item) => semesterDetails.spring.quarters.includes(item));
+    const inFall = course.quarters.some((item) => semesterDetails.fall.quarters.includes(item));
+    if (inSpring && inFall) return "通年";
+    if (inSpring) return "前期";
+    if (inFall) return "後期";
+    return course.term || "要確認";
+  }
+
+  function scheduleExportRows() {
+    return selectedCourses
+      .map((course) => ({
+        学期: exportSemesterLabel(course),
+        開講期間: course.term,
+        講義コード: course.id,
+        科目名: course.title,
+        曜日時限: slotLabel(course),
+        担当教員: course.instructors,
+        キャンパス: course.campus,
+        教室: course.room,
+        単位数: courseCredits(course, department) ?? "要確認",
+        区分: selectionSources[course.id] === "required" ? "必修" : "選択",
+      }))
+      .sort((a, b) =>
+        a.学期.localeCompare(b.学期, "ja") ||
+        a.曜日時限.localeCompare(b.曜日時限, "ja") ||
+        a.科目名.localeCompare(b.科目名, "ja"),
+      );
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+  }
+
+  async function exportSchedule() {
+    const rows = scheduleExportRows();
+    if (!rows.length) {
+      setNotice("出力する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+
+    const safeDepartment = courseData.departments[department].name.replace(/[^\p{L}\p{N}-]+/gu, "-");
+    const basename = `時間割-${courseData.meta.academicYear}-${safeDepartment}-${year}年`;
+    setScheduleExporting(true);
+    try {
+      if (scheduleExportFormat === "csv") {
+        const headers = Object.keys(rows[0]) as (keyof (typeof rows)[number])[];
+        const csvCell = (rawValue: string | number) => {
+          let value = String(rawValue);
+          if (/^[=+\-@]/.test(value)) value = `'${value}`;
+          return `"${value.replaceAll('"', '""')}"`;
+        };
+        const csv = [
+          headers.map(csvCell).join(","),
+          ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(",")),
+        ].join("\r\n");
+        downloadBlob(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }), `${basename}.csv`);
+      } else {
+        const { default: ExcelJS } = await import("exceljs");
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = "日本大学生産工学部 履修登録シミュレータ";
+        workbook.created = new Date();
+        const worksheet = workbook.addWorksheet("時間割");
+        worksheet.addRow([`${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`]);
+        worksheet.mergeCells(1, 1, 1, 10);
+        worksheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
+        worksheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0C2340" } };
+        worksheet.getCell("A1").alignment = { vertical: "middle" };
+        worksheet.getRow(1).height = 28;
+        worksheet.addRow([]);
+        worksheet.columns = [
+          { key: "学期", width: 10 }, { key: "開講期間", width: 14 }, { key: "講義コード", width: 15 },
+          { key: "科目名", width: 34 }, { key: "曜日時限", width: 18 }, { key: "担当教員", width: 24 },
+          { key: "キャンパス", width: 14 }, { key: "教室", width: 18 }, { key: "単位数", width: 10 }, { key: "区分", width: 10 },
+        ];
+        const headerRow = worksheet.addRow(Object.keys(rows[0]));
+        headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2457D6" } };
+        rows.forEach((row) => worksheet.addRow(Object.values(row)));
+        worksheet.views = [{ state: "frozen", ySplit: 3 }];
+        worksheet.autoFilter = { from: "A3", to: "J3" };
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber >= 3) {
+            row.alignment = { vertical: "middle", wrapText: true };
+            row.eachCell((cell) => {
+              cell.border = { bottom: { style: "thin", color: { argb: "FFDCE3ED" } } };
+            });
+          }
+        });
+        const buffer = await workbook.xlsx.writeBuffer();
+        downloadBlob(
+          new Blob([new Uint8Array(buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+          `${basename}.xlsx`,
+        );
+      }
+      setNotice(`${scheduleExportFormat === "xlsx" ? "Excel" : "CSV"}形式で時間割を出力しました。`);
+    } catch {
+      setNotice("時間割を出力できませんでした。もう一度お試しください。");
+    } finally {
+      setScheduleExporting(false);
+    }
+  }
+
+  function courseInExportSemester(course: Course, targetSemester: Semester) {
+    const assigned = courseSemesterAssignments[course.id];
+    return assigned
+      ? assigned === targetSemester
+      : course.quarters.some((item) => semesterDetails[targetSemester].quarters.includes(item));
+  }
+
+  function coursesAtExportSlot(targetSemester: Semester, day: Day, period: number) {
+    return selectedCourses.filter(
+      (course) =>
+        courseInExportSemester(course, targetSemester) &&
+        course.slots.some((slot) => slot.day === day && slot.period === period),
+    );
+  }
+
+  function coursesAtQuarterSlot(targetQuarter: number, day: Day, period: number) {
+    return selectedCourses.filter(
+      (course) =>
+        course.quarters.includes(targetQuarter) &&
+        course.slots.some((slot) => slot.day === day && slot.period === period),
+    );
+  }
+
+  function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
+    const lines: string[] = [];
+    let line = "";
+    for (const character of text) {
+      const next = `${line}${character}`;
+      if (line && context.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = character;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  async function createScheduleImage() {
+    const canvas = document.createElement("canvas");
+    const width = 1600;
+    const margin = 56;
+    const labelWidth = 86;
+    const columnWidth = (width - margin * 2 - labelWidth) / days.length;
+    const rowHeight = 128;
+    const tableHeight = 58 + periods.length * rowHeight;
+    canvas.width = width;
+    canvas.height = 150 + tableHeight * 2 + 90;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable");
+    context.fillStyle = "#f3f6fa";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#0c2340";
+    context.font = "bold 36px sans-serif";
+    context.fillText(`${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`, margin, 58);
+    context.font = "20px sans-serif";
+    context.fillStyle = "#5f6b80";
+    context.fillText("日本大学生産工学部 履修登録シミュレータ", margin, 94);
+
+    (["spring", "fall"] as Semester[]).forEach((targetSemester, semesterIndex) => {
+      const top = 126 + semesterIndex * tableHeight;
+      context.fillStyle = "#0c2340";
+      context.font = "bold 26px sans-serif";
+      context.fillText(semesterDetails[targetSemester].label, margin, top + 36);
+      days.forEach((day, dayIndex) => {
+        const x = margin + labelWidth + dayIndex * columnWidth;
+        context.fillStyle = "#2457d6";
+        context.fillRect(x, top + 50, columnWidth, 46);
+        context.fillStyle = "white";
+        context.font = "bold 21px sans-serif";
+        context.textAlign = "center";
+        context.fillText(`${day}曜日`, x + columnWidth / 2, top + 80);
+      });
+      periods.forEach((period, periodIndex) => {
+        const y = top + 96 + periodIndex * rowHeight;
+        context.fillStyle = "#e4eaf3";
+        context.fillRect(margin, y, labelWidth, rowHeight);
+        context.fillStyle = "#14213d";
+        context.font = "bold 21px sans-serif";
+        context.textAlign = "center";
+        context.fillText(`${period}限`, margin + labelWidth / 2, y + rowHeight / 2 + 8);
+        days.forEach((day, dayIndex) => {
+          const x = margin + labelWidth + dayIndex * columnWidth;
+          context.fillStyle = "white";
+          context.fillRect(x, y, columnWidth, rowHeight);
+          context.strokeStyle = "#b8c3d2";
+          context.strokeRect(x, y, columnWidth, rowHeight);
+          const courses = coursesAtExportSlot(targetSemester, day, period);
+          const courseText = courses.map((course) => `${course.title}\n${course.term}・${course.campus}`).join("\n");
+          context.fillStyle = "#14213d";
+          context.font = "bold 17px sans-serif";
+          context.textAlign = "left";
+          const lines = courseText.split("\n").flatMap((line) => wrapCanvasText(context, line, columnWidth - 18));
+          lines.slice(0, 5).forEach((line, lineIndex) => context.fillText(line, x + 9, y + 25 + lineIndex * 21));
+        });
+      });
+    });
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Image creation failed")), "image/png"),
+    );
+  }
+
+  async function shareSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("共有する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    try {
+      const image = await createScheduleImage();
+      const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年.png`;
+      const file = new File([image], filename, { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: `${courseData.meta.academicYear}年度の時間割`, files: [file] });
+        setNotice("曜日・時限表の画像をスマートフォンの共有メニューへ送りました。");
+      } else {
+        downloadBlob(image, filename);
+        setNotice("共有用の曜日・時限表を画像で保存しました。スマートフォンへ送信してお使いください。");
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setNotice("共有用の時間割画像を作成できませんでした。もう一度お試しください。");
+    }
+  }
+
+  function emailSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("メールで送る科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    const lines = (["spring", "fall"] as Semester[]).flatMap((targetSemester) => [
+      `【${semesterDetails[targetSemester].label}】`,
+      ...periods.map((period) =>
+        `${period}限｜${days.map((day) => {
+          const titles = coursesAtExportSlot(targetSemester, day, period).map((course) => course.title);
+          return `${day}:${titles.join("・") || "―"}`;
+        }).join("｜")}`,
+      ),
+      "",
+    ]);
+    const subject = `${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`;
+    const body = [subject, "", ...lines, "日本大学生産工学部 履修登録シミュレータで作成"].join("\n");
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  function printSchedule() {
+    if (!selectedCourses.length) {
+      setNotice("印刷する科目がありません。時間割に科目を追加してください。");
+      return;
+    }
+    window.print();
+  }
+
   async function importScheduleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -869,6 +1174,13 @@ export default function Home() {
         </div>
         <div className="header-badges">
           <span className="data-badge">{courseData.meta.academicYear}年度データ</span>
+          <button
+            type="button"
+            className="history-button"
+            onClick={() => setUpdateHistoryOpen(true)}
+          >
+            更新履歴
+          </button>
           <div className="text-size-control" role="group" aria-label="文字サイズ">
             <span>文字</span>
             {(["small", "normal", "large"] as TextSize[]).map((size, index) => (
@@ -888,6 +1200,47 @@ export default function Home() {
           </a>
         </div>
       </header>
+
+      {updateHistoryOpen && (
+        <div
+          className="modal-layer modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setUpdateHistoryOpen(false);
+          }}
+        >
+          <section
+            className="detail-modal update-history-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="update-history-title"
+          >
+            <button
+              type="button"
+              className="modal-close"
+              aria-label="更新履歴を閉じる"
+              onClick={() => setUpdateHistoryOpen(false)}
+            >
+              ×
+            </button>
+            <p className="eyebrow">UPDATE HISTORY</p>
+            <h2 id="update-history-title">更新履歴</h2>
+            <p className="update-history-description">
+              時間割データとアプリに反映された主な更新を表示しています。
+            </p>
+            <ol className="update-history-list">
+              {updateHistory.map((entry, index) => (
+                <li key={`${entry.updatedAt}-${index}`}>
+                  <span className={`history-source ${entry.source}`}>
+                    {entry.source === "automatic" ? "自動" : "手動"}
+                  </span>
+                  <strong>{formatHistoryEntry(entry)}</strong>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      )}
 
       <section className="official-registration-notice" role="alert">
         <span className="notice-icon" aria-hidden="true">!</span>
@@ -926,10 +1279,29 @@ export default function Home() {
         <div className="intro-copy">
           <p className="eyebrow light">BUILD YOUR SCHEDULE</p>
           <h1>迷わず組める、<br />あなたの時間割。</h1>
-          <p>
+          <p className="intro-description">
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
           </p>
+          <aside className="intro-update-history" aria-labelledby="intro-update-history-title">
+            <div className="intro-update-history-heading">
+              <div>
+                <span>WHAT'S NEW</span>
+                <h2 id="intro-update-history-title">最近の更新</h2>
+              </div>
+              <button type="button" onClick={() => setUpdateHistoryOpen(true)}>
+                すべて見る
+              </button>
+            </div>
+            <ol>
+              {updateHistory.slice(0, 3).map((entry, index) => (
+                <li key={`${entry.updatedAt}-summary-${index}`}>
+                  <i aria-hidden="true" />
+                  <span>{formatHistoryEntry(entry)}</span>
+                </li>
+              ))}
+            </ol>
+          </aside>
         </div>
 
         <div className="profile-card">
@@ -985,6 +1357,17 @@ export default function Home() {
               />
             </label>
           </div>
+          <a
+            className="department-guidance-link"
+            href={firstYearGuidanceUrls[department]}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${courseData.departments[department].name}を選択中。1年生向け時間割作成用資料掲載サイトを開く`}
+          >
+            <span>1年生向け時間割作成用資料</span>
+            <strong>{courseData.departments[department].name}の資料を確認</strong>
+            <small>資料掲載サイトを開く ↗</small>
+          </a>
 
           <div className="profile-row">
             <span className="field-label">学年</span>
@@ -1152,6 +1535,37 @@ export default function Home() {
               <h2>{courseData.departments[department].name}・{year}年・{semesterLabel}</h2>
             </div>
             <div className="toolbar-actions">
+              <div className="schedule-export-control">
+                <label>
+                  <span>出力形式</span>
+                  <select
+                    value={scheduleExportFormat}
+                    onChange={(event) => setScheduleExportFormat(event.target.value as ScheduleExportFormat)}
+                    aria-label="時間割の出力形式"
+                  >
+                    <option value="xlsx">Excel</option>
+                    <option value="csv">CSV</option>
+                  </select>
+                </label>
+                <button className="primary-button" onClick={exportSchedule} disabled={scheduleExporting}>
+                  {scheduleExporting ? "出力中…" : "時間割を出力"}
+                </button>
+              </div>
+              <button className="soft-button share-schedule-button" onClick={shareSchedule}>
+                スマホへ共有
+              </button>
+              <button className="soft-button email-schedule-button" onClick={emailSchedule}>メールで送信</button>
+              <div className="print-schedule-control">
+                <select
+                  value={printSemester}
+                  onChange={(event) => setPrintSemester(event.target.value as Semester)}
+                  aria-label="印刷する学期"
+                >
+                  <option value="spring">前期（1Q・2Q）</option>
+                  <option value="fall">後期（3Q・4Q）</option>
+                </select>
+                <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
+              </div>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
               </button>
@@ -1449,6 +1863,45 @@ export default function Home() {
             <p>科目の「履修制限」と学籍番号別のクラス表を照合してください。このシミュレータは確定登録の代わりにはなりません。</p>
           </div>
         </aside>
+      </section>
+
+      <section className="printable-schedule" aria-hidden="true">
+        <header>
+          <div>
+            <p>NIHON UNIVERSITY · COLLEGE OF INDUSTRIAL TECHNOLOGY</p>
+            <h1>{courseData.meta.academicYear}年度 {semesterDetails[printSemester].label}時間割表</h1>
+          </div>
+          <dl>
+            <div><dt>所属</dt><dd>{courseData.departments[department].name}</dd></div>
+            <div><dt>学年</dt><dd>{year}年</dd></div>
+          </dl>
+        </header>
+        {semesterDetails[printSemester].quarters.map((targetQuarter) => (
+          <section className="print-semester" key={targetQuarter}>
+            <h2>{targetQuarter}Q</h2>
+            <table>
+              <thead><tr><th>時限</th>{days.map((day) => <th key={day}>{day}曜日</th>)}</tr></thead>
+              <tbody>
+                {periods.map((period) => (
+                  <tr key={period}>
+                    <th>{period}限</th>
+                    {days.map((day) => (
+                      <td key={day}>
+                        {coursesAtQuarterSlot(targetQuarter, day, period).map((course) => (
+                          <div className="print-course" key={course.id}>
+                            <strong>{course.title}</strong>
+                            <small>{course.term}・{course.campus}{course.room ? `・${course.room}` : ""}</small>
+                          </div>
+                        ))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
+        <footer>出力日時：{formatUpdateTime(new Date().toISOString())}　※正式な履修登録内容はポータルで確認してください。</footer>
       </section>
 
       <section className="rules-section">

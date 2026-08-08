@@ -938,18 +938,99 @@ export default function Home() {
     }
   }
 
-  function scheduleShareText() {
-    const rows = scheduleExportRows();
-    const heading = `${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`;
-    return [
-      heading,
-      "",
-      ...rows.map((row) =>
-        `[${row.学期}・${row.曜日時限}] ${row.科目名}（${row.キャンパス}${row.教室 ? `・${row.教室}` : ""}）`,
-      ),
-      "",
-      "日本大学生産工学部 履修登録シミュレータで作成",
-    ].join("\n");
+  function courseInExportSemester(course: Course, targetSemester: Semester) {
+    const assigned = courseSemesterAssignments[course.id];
+    return assigned
+      ? assigned === targetSemester
+      : course.quarters.some((item) => semesterDetails[targetSemester].quarters.includes(item));
+  }
+
+  function coursesAtExportSlot(targetSemester: Semester, day: Day, period: number) {
+    return selectedCourses.filter(
+      (course) =>
+        courseInExportSemester(course, targetSemester) &&
+        course.slots.some((slot) => slot.day === day && slot.period === period),
+    );
+  }
+
+  function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
+    const lines: string[] = [];
+    let line = "";
+    for (const character of text) {
+      const next = `${line}${character}`;
+      if (line && context.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = character;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  async function createScheduleImage() {
+    const canvas = document.createElement("canvas");
+    const width = 1600;
+    const margin = 56;
+    const labelWidth = 86;
+    const columnWidth = (width - margin * 2 - labelWidth) / days.length;
+    const rowHeight = 128;
+    const tableHeight = 58 + periods.length * rowHeight;
+    canvas.width = width;
+    canvas.height = 150 + tableHeight * 2 + 90;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is unavailable");
+    context.fillStyle = "#f3f6fa";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#0c2340";
+    context.font = "bold 36px sans-serif";
+    context.fillText(`${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`, margin, 58);
+    context.font = "20px sans-serif";
+    context.fillStyle = "#5f6b80";
+    context.fillText("日本大学生産工学部 履修登録シミュレータ", margin, 94);
+
+    (["spring", "fall"] as Semester[]).forEach((targetSemester, semesterIndex) => {
+      const top = 126 + semesterIndex * tableHeight;
+      context.fillStyle = "#0c2340";
+      context.font = "bold 26px sans-serif";
+      context.fillText(semesterDetails[targetSemester].label, margin, top + 36);
+      days.forEach((day, dayIndex) => {
+        const x = margin + labelWidth + dayIndex * columnWidth;
+        context.fillStyle = "#2457d6";
+        context.fillRect(x, top + 50, columnWidth, 46);
+        context.fillStyle = "white";
+        context.font = "bold 21px sans-serif";
+        context.textAlign = "center";
+        context.fillText(`${day}曜日`, x + columnWidth / 2, top + 80);
+      });
+      periods.forEach((period, periodIndex) => {
+        const y = top + 96 + periodIndex * rowHeight;
+        context.fillStyle = "#e4eaf3";
+        context.fillRect(margin, y, labelWidth, rowHeight);
+        context.fillStyle = "#14213d";
+        context.font = "bold 21px sans-serif";
+        context.textAlign = "center";
+        context.fillText(`${period}限`, margin + labelWidth / 2, y + rowHeight / 2 + 8);
+        days.forEach((day, dayIndex) => {
+          const x = margin + labelWidth + dayIndex * columnWidth;
+          context.fillStyle = "white";
+          context.fillRect(x, y, columnWidth, rowHeight);
+          context.strokeStyle = "#b8c3d2";
+          context.strokeRect(x, y, columnWidth, rowHeight);
+          const courses = coursesAtExportSlot(targetSemester, day, period);
+          const courseText = courses.map((course) => `${course.title}\n${course.term}・${course.campus}`).join("\n");
+          context.fillStyle = "#14213d";
+          context.font = "bold 17px sans-serif";
+          context.textAlign = "left";
+          const lines = courseText.split("\n").flatMap((line) => wrapCanvasText(context, line, columnWidth - 18));
+          lines.slice(0, 5).forEach((line, lineIndex) => context.fillText(line, x + 9, y + 25 + lineIndex * 21));
+        });
+      });
+    });
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Image creation failed")), "image/png"),
+    );
   }
 
   async function shareSchedule() {
@@ -957,21 +1038,20 @@ export default function Home() {
       setNotice("共有する科目がありません。時間割に科目を追加してください。");
       return;
     }
-    const title = `${courseData.meta.academicYear}年度の時間割`;
-    const text = scheduleShareText();
     try {
-      if (navigator.share) {
-        await navigator.share({ title, text });
-        setNotice("スマートフォンの共有メニューへ時間割を送りました。");
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-        setNotice("この端末では共有メニューを使えないため、時間割をクリップボードへコピーしました。");
+      const image = await createScheduleImage();
+      const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年.png`;
+      const file = new File([image], filename, { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: `${courseData.meta.academicYear}年度の時間割`, files: [file] });
+        setNotice("曜日・時限表の画像をスマートフォンの共有メニューへ送りました。");
       } else {
-        throw new Error("Sharing is unavailable");
+        downloadBlob(image, filename);
+        setNotice("共有用の曜日・時限表を画像で保存しました。スマートフォンへ送信してお使いください。");
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setNotice("時間割を共有できませんでした。ExcelまたはCSV出力をお試しください。");
+      setNotice("共有用の時間割画像を作成できませんでした。もう一度お試しください。");
     }
   }
 
@@ -1446,7 +1526,7 @@ export default function Home() {
                 スマホへ共有
               </button>
               <button className="soft-button print-schedule-button" onClick={printSchedule}>
-                A4で印刷
+                印刷
               </button>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
@@ -1758,22 +1838,31 @@ export default function Home() {
             <div><dt>学年</dt><dd>{year}年</dd></div>
           </dl>
         </header>
-        <table>
-          <thead>
-            <tr>
-              <th>学期</th><th>曜日時限</th><th>科目名</th><th>担当教員</th>
-              <th>キャンパス</th><th>教室</th><th>単位</th><th>区分</th>
-            </tr>
-          </thead>
-          <tbody>
-            {scheduleExportRows().map((row) => (
-              <tr key={`${row.講義コード}-${row.学期}`}>
-                <td>{row.学期}</td><td>{row.曜日時限}</td><td>{row.科目名}</td><td>{row.担当教員}</td>
-                <td>{row.キャンパス}</td><td>{row.教室}</td><td>{row.単位数}</td><td>{row.区分}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {(["spring", "fall"] as Semester[]).map((targetSemester) => (
+          <section className="print-semester" key={targetSemester}>
+            <h2>{semesterDetails[targetSemester].label}</h2>
+            <table>
+              <thead><tr><th>時限</th>{days.map((day) => <th key={day}>{day}曜日</th>)}</tr></thead>
+              <tbody>
+                {periods.map((period) => (
+                  <tr key={period}>
+                    <th>{period}限</th>
+                    {days.map((day) => (
+                      <td key={day}>
+                        {coursesAtExportSlot(targetSemester, day, period).map((course) => (
+                          <div className="print-course" key={course.id}>
+                            <strong>{course.title}</strong>
+                            <small>{course.term}・{course.campus}{course.room ? `・${course.room}` : ""}</small>
+                          </div>
+                        ))}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
         <footer>出力日時：{formatUpdateTime(new Date().toISOString())}　※正式な履修登録内容はポータルで確認してください。</footer>
       </section>
 

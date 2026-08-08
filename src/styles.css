@@ -564,14 +564,16 @@ a { color: inherit; text-decoration: none; }
   .printable-schedule dl div { display: flex; gap: 2mm; }
   .printable-schedule dt { color: #64748b; font-size: 8pt; }
   .printable-schedule dd { margin: 0; font-size: 9pt; font-weight: 700; }
-  .printable-schedule table { width: 100%; margin-top: 5mm; border-collapse: collapse; table-layout: fixed; font-size: 7.5pt; }
+  .print-semester { margin-top: 4mm; break-inside: avoid; }
+  .print-semester h2 { margin: 0 0 2mm; font-size: 11pt; }
+  .printable-schedule table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7pt; }
   .printable-schedule th { padding: 2.2mm 1.5mm; color: white; background: #2457d6 !important; border: 1px solid #1d46ac; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .printable-schedule td { padding: 2mm 1.5mm; border: 1px solid #aeb8c5; overflow-wrap: anywhere; }
+  .printable-schedule td { height: 13mm; padding: 1.2mm; border: 1px solid #aeb8c5; overflow-wrap: anywhere; vertical-align: top; }
   .printable-schedule tbody tr:nth-child(even) { background: #f3f6fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .printable-schedule th:nth-child(1), .printable-schedule th:nth-child(2) { width: 8%; }
-  .printable-schedule th:nth-child(3) { width: 22%; }
-  .printable-schedule th:nth-child(4) { width: 17%; }
-  .printable-schedule th:nth-child(5), .printable-schedule th:nth-child(6) { width: 12%; }
-  .printable-schedule th:nth-child(7), .printable-schedule th:nth-child(8) { width: 7%; }
+  .printable-schedule th:first-child { width: 7%; }
+  .print-course + .print-course { margin-top: 1mm; padding-top: 1mm; border-top: 1px dashed #9ca8b8; }
+  .print-course strong, .print-course small { display: block; }
+  .print-course strong { font-size: 7pt; line-height: 1.25; }
+  .print-course small { margin-top: .5mm; color: #536176; font-size: 5.8pt; line-height: 1.2; }
   .printable-schedule footer { margin-top: 4mm; color: #596579; font-size: 7pt; text-align: right; }
 }

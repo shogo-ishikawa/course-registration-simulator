@@ -2,7 +2,7 @@ name: 時間割データを定期更新
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "2,17,32,47 * * * *"
       timezone: "Asia/Tokyo"
   workflow_dispatch:
     inputs:
@@ -43,23 +43,40 @@ jobs:
             exit 0
           fi
           case "$TIMETABLE_CHECK_INTERVAL_HOURS" in
-            1|2|3|4|6|8|12|24|48|72|168|672) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
+            0.25) interval_minutes=15 ;;
+            0.5) interval_minutes=30 ;;
+            1) interval_minutes=60 ;;
+            2) interval_minutes=120 ;;
+            3) interval_minutes=180 ;;
+            4) interval_minutes=240 ;;
+            6) interval_minutes=360 ;;
+            8) interval_minutes=480 ;;
+            12) interval_minutes=720 ;;
+            24) interval_minutes=1440 ;;
+            48) interval_minutes=2880 ;;
+            72) interval_minutes=4320 ;;
+            168) interval_minutes=10080 ;;
+            672) interval_minutes=40320 ;;
+            674) interval_minutes=40440 ;;
             *)
-              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168, 672 のいずれかにしてください。" >&2
+              echo "TIMETABLE_CHECK_INTERVAL_HOURS の値が対応範囲外です。READMEを確認してください。" >&2
               exit 1
               ;;
           esac
-          current_epoch="$(TZ=Asia/Tokyo date -d 'today 00:00' +%s)"
-          current_hour="$(TZ=Asia/Tokyo date +%H)"
-          current_epoch=$((current_epoch + 10#$current_hour * 3600))
-          # 2026年1月5日（月）6:17 JSTを、複数日間隔を含む全設定の基準にする。
-          anchor_epoch="$(TZ=Asia/Tokyo date -d '2026-01-05 06:00' +%s)"
-          elapsed_hours=$(( (current_epoch - anchor_epoch) / 3600 ))
-          if [ $(( elapsed_hours % interval )) -eq 0 ]; then
+          now_epoch="$(date +%s)"
+          current_minute="$(date +%M)"
+          current_second="$(date +%S)"
+          # Actions開始の遅延を吸収し、直前の予定スロット（毎時02/17/32/47分）へ丸める。
+          minutes_after_slot=$(( (10#$current_minute - 2 + 60) % 15 ))
+          current_epoch=$((now_epoch - 10#$current_second - minutes_after_slot * 60))
+          # 2026年1月5日（月）6:17 JSTを全ての確認間隔の基準にする。
+          anchor_epoch="$(TZ=Asia/Tokyo date -d '2026-01-05 06:17' +%s)"
+          elapsed_minutes=$(( (current_epoch - anchor_epoch) / 60 ))
+          if [ $(( elapsed_minutes % interval_minutes )) -eq 0 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "${interval}時間間隔の対象時刻ではないため、今回は確認しません。"
+            echo "${TIMETABLE_CHECK_INTERVAL_HOURS}時間間隔の対象時刻ではないため、今回は確認しません。"
           fi
 
       - name: Node.jsを準備

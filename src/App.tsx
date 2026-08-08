@@ -95,6 +95,7 @@ const buildUpdatedAt = import.meta.env.VITE_BUILD_TIME || updateInfo.appUpdatedA
 const buildCommit = import.meta.env.VITE_BUILD_COMMIT || "local";
 const timetableSourcePage = updateInfo.sourcePageUrl;
 const updateHistory = updateHistoryJson as UpdateHistoryEntry[];
+const firstYearGuidanceUrl = "https://sites.google.com/view/mimomi-guidance/home";
 const days: Day[] = ["月", "火", "水", "木", "金", "土"];
 const periods = [1, 2, 3, 4, 5];
 const semesterDetails: Record<Semester, { label: string; quarters: number[] }> = {
@@ -1077,6 +1078,17 @@ export default function Home() {
               />
             </label>
           </div>
+          <a
+            className="department-guidance-link"
+            href={firstYearGuidanceUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${courseData.departments[department].name}を選択中。1年生向け時間割作成用資料掲載サイトを開く`}
+          >
+            <span>1年生向け時間割作成用資料</span>
+            <strong>{courseData.departments[department].name}の資料を確認</strong>
+            <small>資料掲載サイトを開く ↗</small>
+          </a>
 
           <div className="profile-row">
             <span className="field-label">学年</span>

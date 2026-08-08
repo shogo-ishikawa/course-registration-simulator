@@ -146,6 +146,11 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid #ccd5e2; color: var(--ink); background: white; outline: none;
 }
 .profile-card select:focus, .profile-card input:focus, .search-box input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(36,87,214,.12); }
+.department-guidance-link { min-height: 64px; margin: -6px 0 18px; padding: 11px 13px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #a9c0e9; border-radius: 11px; color: #153f99; background: #f3f7ff; }
+.department-guidance-link:hover { border-color: #628ad6; background: #e8f0ff; }
+.department-guidance-link span { color: #6780aa; font-size: 8px; font-weight: 1000; letter-spacing: .08em; }
+.department-guidance-link strong { margin-top: 3px; font-size: 10px; line-height: 1.45; }
+.department-guidance-link small { margin-top: 3px; color: #2457d6; font-size: 8px; font-weight: 900; }
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; border-radius: 11px; background: #eef2f7; }
 .segmented button { height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 800; color: #6f7a8e; }
 .segmented button.active { background: white; color: var(--blue); box-shadow: 0 2px 8px rgba(20,33,61,.1); }

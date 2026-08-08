@@ -2,7 +2,7 @@ name: 時間割データを定期更新
 
 on:
   schedule:
-    - cron: "17 6 * * *"
+    - cron: "17 * * * *"
       timezone: "Asia/Tokyo"
   workflow_dispatch:
     inputs:
@@ -25,6 +25,7 @@ concurrency:
 env:
   TIMETABLE_XLSX_URL: ${{ inputs.source_url || vars.TIMETABLE_XLSX_URL || 'https://nihon-u.box.com/s/14vswxrknmmi2z06xa3xcjnfl6h8jt8d' }}
   TIMETABLE_ACADEMIC_YEAR: ${{ inputs.academic_year || vars.TIMETABLE_ACADEMIC_YEAR || '2026' }}
+  TIMETABLE_CHECK_INTERVAL_HOURS: ${{ vars.TIMETABLE_CHECK_INTERVAL_HOURS || '24' }}
 
 jobs:
   refresh:
@@ -33,19 +34,46 @@ jobs:
       - name: ソースを取得
         uses: actions/checkout@v6
 
+      - name: 確認頻度を判定
+        id: frequency
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$TIMETABLE_CHECK_INTERVAL_HOURS" in
+            1|2|3|4|6|8|12|24) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
+            *)
+              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24 のいずれかにしてください。" >&2
+              exit 1
+              ;;
+          esac
+          current_hour="$(TZ=Asia/Tokyo date +%H)"
+          if [ $(( (10#$current_hour - 6 + 24) % interval )) -eq 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "${interval}時間間隔の対象時刻ではないため、今回は確認しません。"
+          fi
+
       - name: Node.jsを準備
+        if: steps.frequency.outputs.run == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
       - name: 依存関係をインストール
+        if: steps.frequency.outputs.run == 'true'
         run: npm ci
 
       - name: Boxから時間割Excelを取得
+        if: steps.frequency.outputs.run == 'true'
         run: npm run data:fetch -- "$TIMETABLE_XLSX_URL" .cache/timetable.xlsx
 
       - name: 変更の有無を確認
+        if: steps.frequency.outputs.run == 'true'
         id: changes
         shell: bash
         run: |
@@ -84,10 +112,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/course-data.json src/data/update-info.json data-source/timetable.sha256
+          git add src/data/course-data.json src/data/update-info.json src/data/update-history.json data-source/timetable.sha256
           git commit -m "data: 時間割表の更新を反映"
           git push
 
       - name: 更新なし
-        if: steps.changes.outputs.changed != 'true'
+        if: steps.frequency.outputs.run == 'true' && steps.changes.outputs.changed != 'true'
         run: echo "前回取り込み時から時間割Excelに変更はありません。"

@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 const inputPath = process.argv[2];
 const courseDataPath = "src/data/course-data.json";
 const updateInfoPath = "src/data/update-info.json";
+const updateHistoryPath = "src/data/update-history.json";
 
 if (!inputPath) {
   console.error("使い方: npm run data:update -- path/to/timetable.xlsx [--source-url URL] [--academic-year 2026]");
@@ -70,6 +71,7 @@ function parseSlot(value) {
 
 const current = JSON.parse(await fs.readFile(courseDataPath, "utf8"));
 const updateInfo = JSON.parse(await fs.readFile(updateInfoPath, "utf8"));
+const updateHistory = JSON.parse(await fs.readFile(updateHistoryPath, "utf8"));
 const inputBytes = await fs.readFile(inputPath);
 const sourceSha256 = option("--sha256") || crypto.createHash("sha256").update(inputBytes).digest("hex");
 const sourceUrl = option("--source-url") || updateInfo.sourcePageUrl;
@@ -218,7 +220,13 @@ const nextUpdateInfo = {
   sourcePageUrl: sourceUrl,
   sourceSha256,
 };
+const updatedAt = nextUpdateInfo.timetableUpdatedAt;
+const nextUpdateHistory = [
+  { updatedAt, message: "時間割表を更新", source: "automatic" },
+  ...updateHistory,
+].slice(0, 100);
 
 await fs.writeFile(courseDataPath, `${JSON.stringify(next)}\n`);
 await fs.writeFile(updateInfoPath, `${JSON.stringify(nextUpdateInfo, null, 2)}\n`);
+await fs.writeFile(updateHistoryPath, `${JSON.stringify(nextUpdateHistory, null, 2)}\n`);
 console.log(JSON.stringify({ academicYear, sourceSha256, ...coverage }, null, 2));

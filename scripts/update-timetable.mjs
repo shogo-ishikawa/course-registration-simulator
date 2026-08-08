@@ -213,14 +213,15 @@ const next = {
   departments: current.departments,
   courses,
 };
+// 変換が完了したこの時点を、取込情報と履歴の両方で同じ更新時刻として使用する。
+const updatedAt = new Date().toISOString();
 const nextUpdateInfo = {
   ...updateInfo,
-  timetableUpdatedAt: new Date().toISOString(),
+  timetableUpdatedAt: updatedAt,
   sourceWorkbook: path.basename(inputPath),
   sourcePageUrl: sourceUrl,
   sourceSha256,
 };
-const updatedAt = nextUpdateInfo.timetableUpdatedAt;
 const nextUpdateHistory = [
   { updatedAt, message: "時間割表を更新", source: "automatic" },
   ...updateHistory,

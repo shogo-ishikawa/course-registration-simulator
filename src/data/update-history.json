@@ -1,27 +1,12 @@
 [
   {
-    "updatedAt": "2026-08-08T05:00:00.000Z",
-    "message": "v1.1.2を公開（15分間隔と1年生向け資料リンクを追加）",
-    "source": "manual"
-  },
-  {
-    "updatedAt": "2026-08-08T04:00:00.000Z",
-    "message": "v1.1.1を公開（最近の更新表示と週間隔設定を追加）",
-    "source": "manual"
-  },
-  {
-    "updatedAt": "2026-08-08T03:00:00.000Z",
-    "message": "v1.1.0を公開（更新履歴と確認頻度設定を追加）",
+    "updatedAt": "2026-08-08T04:00:49.422Z",
+    "message": "v1.1.3を更新（学科別資料リンクと更新時刻の整合性検証を追加）",
     "source": "manual"
   },
   {
     "updatedAt": "2026-08-04T03:10:53.454Z",
     "message": "時間割表を更新",
     "source": "automatic"
-  },
-  {
-    "updatedAt": "2026-08-04T03:03:18.000Z",
-    "message": "アプリを公開",
-    "source": "manual"
   }
 ]

@@ -42,6 +42,12 @@ if (!Array.isArray(updateHistory) || updateHistory.length === 0) {
     }
   }
 }
+const latestAutomaticUpdate = updateHistory.find((entry) => entry.source === "automatic");
+if (!latestAutomaticUpdate) {
+  errors.push("時間割表の自動更新履歴がありません");
+} else if (latestAutomaticUpdate.updatedAt !== updateInfo.timetableUpdatedAt) {
+  errors.push("最新の自動更新履歴と時間割表の最終取込日時が一致しません");
+}
 
 if (errors.length) {
   console.error(errors.slice(0, 30).join("\n"));

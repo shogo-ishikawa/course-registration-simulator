@@ -95,7 +95,17 @@ const buildUpdatedAt = import.meta.env.VITE_BUILD_TIME || updateInfo.appUpdatedA
 const buildCommit = import.meta.env.VITE_BUILD_COMMIT || "local";
 const timetableSourcePage = updateInfo.sourcePageUrl;
 const updateHistory = updateHistoryJson as UpdateHistoryEntry[];
-const firstYearGuidanceUrl = "https://sites.google.com/view/mimomi-guidance/home";
+const firstYearGuidanceUrls: Record<string, string> = {
+  機械: "https://sites.google.com/view/mimomi-guidance/home/mech_engr",
+  電気: "https://sites.google.com/view/mimomi-guidance/home/elec_eng",
+  土木: "https://sites.google.com/view/mimomi-guidance/home/civil_engr",
+  建築: "https://sites.google.com/view/mimomi-guidance/home/arch_engr",
+  応化: "https://sites.google.com/view/mimomi-guidance/home/amc",
+  ＭＡ: "https://sites.google.com/view/mimomi-guidance/home/ma",
+  数情: "https://sites.google.com/view/mimomi-guidance/home/math_engr",
+  環境: "https://sites.google.com/view/mimomi-guidance/home/sust_engr",
+  創生: "https://sites.google.com/view/mimomi-guidance/home/cd",
+};
 const days: Day[] = ["月", "火", "水", "木", "金", "土"];
 const periods = [1, 2, 3, 4, 5];
 const semesterDetails: Record<Semester, { label: string; quarters: number[] }> = {
@@ -1080,7 +1090,7 @@ export default function Home() {
           </div>
           <a
             className="department-guidance-link"
-            href={firstYearGuidanceUrl}
+            href={firstYearGuidanceUrls[department]}
             target="_blank"
             rel="noreferrer"
             aria-label={`${courseData.departments[department].name}を選択中。1年生向け時間割作成用資料掲載サイトを開く`}

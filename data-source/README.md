@@ -10,4 +10,5 @@ Boxの `/s/` 共有リンクは閲覧ページのHTMLを返すため、取得ス
 知っている全員に対してファイルの閲覧とダウンロードを許可してください。
 
 確認間隔はGitHub ActionsのRepository variable `TIMETABLE_CHECK_INTERVAL_HOURS` で設定します。
+履修登録期間は短い間隔、それ以外は `672`（4週間）に切り替えられます。
 Excelの変更が取り込まれると、`src/data/update-history.json` に更新履歴が自動追加されます。

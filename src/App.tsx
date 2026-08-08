@@ -999,10 +999,29 @@ export default function Home() {
         <div className="intro-copy">
           <p className="eyebrow light">BUILD YOUR SCHEDULE</p>
           <h1>迷わず組める、<br />あなたの時間割。</h1>
-          <p>
+          <p className="intro-description">
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
           </p>
+          <aside className="intro-update-history" aria-labelledby="intro-update-history-title">
+            <div className="intro-update-history-heading">
+              <div>
+                <span>WHAT'S NEW</span>
+                <h2 id="intro-update-history-title">最近の更新</h2>
+              </div>
+              <button type="button" onClick={() => setUpdateHistoryOpen(true)}>
+                すべて見る
+              </button>
+            </div>
+            <ol>
+              {updateHistory.slice(0, 3).map((entry, index) => (
+                <li key={`${entry.updatedAt}-summary-${index}`}>
+                  <i aria-hidden="true" />
+                  <span>{formatHistoryEntry(entry)}</span>
+                </li>
+              ))}
+            </ol>
+          </aside>
         </div>
 
         <div className="profile-card">

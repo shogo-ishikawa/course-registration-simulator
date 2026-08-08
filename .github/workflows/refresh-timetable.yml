@@ -43,14 +43,19 @@ jobs:
             exit 0
           fi
           case "$TIMETABLE_CHECK_INTERVAL_HOURS" in
-            1|2|3|4|6|8|12|24) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
+            1|2|3|4|6|8|12|24|48|72|168|672) interval="$TIMETABLE_CHECK_INTERVAL_HOURS" ;;
             *)
-              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24 のいずれかにしてください。" >&2
+              echo "TIMETABLE_CHECK_INTERVAL_HOURS は 1, 2, 3, 4, 6, 8, 12, 24, 48, 72, 168, 672 のいずれかにしてください。" >&2
               exit 1
               ;;
           esac
+          current_epoch="$(TZ=Asia/Tokyo date -d 'today 00:00' +%s)"
           current_hour="$(TZ=Asia/Tokyo date +%H)"
-          if [ $(( (10#$current_hour - 6 + 24) % interval )) -eq 0 ]; then
+          current_epoch=$((current_epoch + 10#$current_hour * 3600))
+          # 2026年1月5日（月）6:17 JSTを、複数日間隔を含む全設定の基準にする。
+          anchor_epoch="$(TZ=Asia/Tokyo date -d '2026-01-05 06:00' +%s)"
+          elapsed_hours=$(( (current_epoch - anchor_epoch) / 3600 ))
+          if [ $(( elapsed_hours % interval )) -eq 0 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

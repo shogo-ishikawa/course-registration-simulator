@@ -17,7 +17,7 @@ type Semester = "spring" | "fall";
 type CapLimit = 20 | 22 | 24;
 type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
-type ScheduleExportFormat = "xlsx" | "csv";
+type ScheduleExportFormat = "xlsx" | "csv" | "pdf";
 type ImageFormat = "png" | "jpeg";
 type ImagePreview = { url: string; filename: string; label: string };
 type BlockingError = { title: string; message: string; courseTitle: string };
@@ -954,12 +954,37 @@ export default function Home() {
       setNotice("出力する科目がありません。時間割に科目を追加してください。");
       return;
     }
+    if (scheduleExportFormat === "pdf" && !printModels.some(outputHasCourses)) {
+      setNotice(`${outputScopeLabel(printScope)}には出力する科目がありません。出力範囲を確認してください。`);
+      return;
+    }
 
     const safeDepartment = courseData.departments[department].name.replace(/[^\p{L}\p{N}-]+/gu, "-");
     const basename = `時間割-${courseData.meta.academicYear}-${safeDepartment}-${year}年`;
     setScheduleExporting(true);
     try {
-      if (scheduleExportFormat === "csv") {
+      if (scheduleExportFormat === "pdf") {
+        const { createSchedulePdf, SCHEDULE_PDF_PAGE } = await import("./schedule-pdf");
+        if (document.fonts) await document.fonts.ready;
+        const options = { academicYear: courseData.meta.academicYear, departmentName: courseData.departments[department].name, year };
+        const bytes = await createSchedulePdf(printModels, async (model) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = SCHEDULE_PDF_PAGE.imageWidth;
+          canvas.height = SCHEDULE_PDF_PAGE.imageHeight;
+          try {
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("このブラウザではPDFを作成できません。印刷画面からのPDF保存をお試しください。");
+            drawScheduleImage(context, model, canvas.width, canvas.height, options);
+            const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+              (result) => result?.type === "image/png" ? resolve(result) : reject(new Error("PDFのページを作成できませんでした。もう一度お試しください。")), "image/png"));
+            return new Uint8Array(await png.arrayBuffer());
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+        }, { title: `${basename}-${outputScopeLabel(printScope)}` });
+        downloadBlob(new Blob([new Uint8Array(bytes)], { type: "application/pdf" }), `${basename}-${outputScopeLabel(printScope)}.pdf`);
+      } else if (scheduleExportFormat === "csv") {
         const headers = Object.keys(rows[0]) as (keyof (typeof rows)[number])[];
         const csvCell = (rawValue: string | number) => {
           let value = String(rawValue);
@@ -1009,9 +1034,11 @@ export default function Home() {
           `${basename}.xlsx`,
         );
       }
-      setNotice(`${scheduleExportFormat === "xlsx" ? "Excel" : "CSV"}形式で時間割を出力しました。`);
-    } catch {
-      setNotice("時間割を出力できませんでした。もう一度お試しください。");
+      setNotice(`${{ xlsx: "Excel", csv: "CSV", pdf: "PDF" }[scheduleExportFormat]}形式で時間割を出力しました。`);
+    } catch (error) {
+      setNotice(scheduleExportFormat === "pdf"
+        ? `PDFを出力できませんでした。${error instanceof Error ? error.message : "印刷画面からのPDF保存もお試しください。"}`
+        : "時間割を出力できませんでした。もう一度お試しください。");
     } finally {
       setScheduleExporting(false);
     }
@@ -1619,11 +1646,23 @@ export default function Home() {
                     value={scheduleExportFormat}
                     onChange={(event) => setScheduleExportFormat(event.target.value as ScheduleExportFormat)}
                     aria-label="時間割の出力形式"
+                    disabled={scheduleExporting}
                   >
                     <option value="xlsx">Excel</option>
                     <option value="csv">CSV</option>
+                    <option value="pdf">PDF</option>
                   </select>
                 </label>
+                {scheduleExportFormat === "pdf" && (
+                  <label>
+                    <span>PDFの出力範囲</span>
+                    <select value={printScope} onChange={(event) => setPrintScope(event.target.value as TimetableOutputScope)} aria-label="PDFにする範囲" disabled={scheduleExporting}>
+                      {["q1", "q2", "q3", "q4", "spring", "fall"].map((scope) => (
+                        <option key={scope} value={scope}>{outputScopeLabel(scope as TimetableOutputScope)}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <button className="primary-button" onClick={exportSchedule} disabled={scheduleExporting}>
                   {scheduleExporting ? "出力中…" : "時間割を出力"}
                 </button>

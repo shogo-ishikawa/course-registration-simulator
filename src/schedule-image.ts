@@ -7,7 +7,7 @@ export const SCHEDULE_IMAGE_PRESETS = [
   { id: "phone-20-9", label: "スマホ・縦長（1080 × 2400）", width: 1080, height: 2400 },
 ] as const;
 
-type ImageOptions = { academicYear?: number; departmentName?: string; year?: number };
+type ImageOptions = { academicYear?: number; departmentName?: string; year?: number; showSupplementaryInfo?: boolean };
 type TextSection = { text: string; emphasis?: boolean };
 type TextLine = { text: string; size: number; height: number; emphasis: boolean; gap: number };
 type TextLayout = { lines: TextLine[]; height: number };
@@ -113,11 +113,13 @@ function campusColors(campus: string) {
   return { background: "#edf0ed", accent: "#738078" };
 }
 
-const overflowMessage = "時間割の情報量が多く、この画像サイズでは全文を読みやすく配置できません。縦長のスマホサイズを選ぶか、クウォーターごとの印刷をご利用ください。";
+const overflowMessage = "時間割の情報量が多く、この画像サイズでは全文を読みやすく配置できません。縦長のスマホサイズを選ぶか、クォーターごとの印刷をご利用ください。";
+const compactOverflowMessage = "授業の情報が時間割のマス内に収まりません。「時間割の下の情報を表示する」を有効にして、もう一度出力してください。";
 
 /** Draw a complete, opaque quarter wallpaper. The caller owns encoding/download.
  * Long room/teacher lists move to a numbered detail section instead of being
- * truncated. No student number or other private profile fields are accepted.
+ * truncated. When supplementary information is hidden, full metadata must fit
+ * inside the weekly grid. No student number or other private fields are accepted.
  */
 export function drawScheduleImage(
   ctx: CanvasRenderingContext2D,
@@ -127,8 +129,9 @@ export function drawScheduleImage(
   options: ImageOptions = {},
 ): void {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 600 || height < 600 || !model.days.length || !model.rows.length) {
-    throw new Error("画像のサイズと出力するクウォーターを確認してください。");
+    throw new Error("画像のサイズと出力するクォーターを確認してください。");
   }
+  const showSupplementaryInfo = options.showSupplementaryInfo !== false;
   const portrait = height > width;
   const scale = portrait ? width / 1080 : width / 1920;
   const margin = (portrait ? 34 : 48) * scale;
@@ -136,7 +139,7 @@ export function drawScheduleImage(
   const top = (portrait ? 160 : 40) * scale;
   const gridTop = top + (portrait ? 180 : 124) * scale;
   const headerHeight = (portrait ? 66 : 52) * scale;
-  const bottom = height - (portrait ? 115 : 72) * scale;
+  const bottom = showSupplementaryInfo ? height - (portrait ? 115 : 72) * scale : height - margin;
   const labelWidth = (portrait ? 52 : 66) * scale;
   const columnWidth = (innerWidth - labelWidth) / model.days.length;
   const padding = (portrait ? 10 : 12) * scale;
@@ -156,12 +159,12 @@ export function drawScheduleImage(
   // Reserving a detail section can make another crowded cell need a reference;
   // iterate monotonically until every cell and every metadata field fits.
   for (let attempt = 0; attempt <= allCourses.length; attempt += 1) {
-    detailEntries = [
+    detailEntries = (showSupplementaryInfo ? [
       ...allCourses.filter((course) => referenceIds.has(course.id))
         .sort((first, second) => referenceIds.get(first.id)! - referenceIds.get(second.id)!)
         .map((course) => ({ course, reference: referenceIds.get(course.id) })),
       ...model.extraCourses.map((course) => ({ course, reference: undefined })),
-    ].map(({ course, reference }) => {
+    ] : []).map(({ course, reference }) => {
       const sections: TextSection[] = [
         { text: `${reference ? `［${reference}］` : ""}${course.title}${reference ? "" : `（${course.term || "時期要確認"}）`}`, emphasis: true },
         { text: `キャンパス：${course.campus || "要確認"}　教室：${course.room || "要確認"}　担当：${course.instructors || "要確認"}` },
@@ -173,13 +176,14 @@ export function drawScheduleImage(
     });
     detailHeight = detailEntries.length ? detailHeadingHeight + detailEntries.reduce((sum, entry) => sum + entry.layout.height + detailGap, 0) + 14 * scale : 0;
     rowHeight = (bottom - gridTop - headerHeight - detailHeight) / model.rows.length;
-    if (rowHeight < 64 * scale) throw new Error(overflowMessage);
+    if (rowHeight < 64 * scale) throw new Error(showSupplementaryInfo ? overflowMessage : compactOverflowMessage);
     let addedReference = false;
     layouts = model.rows.map((row) => row.cells.map((cell) => {
       const availableHeight = (rowHeight - courseGap * Math.max(0, cell.courses.length - 1)) / Math.max(1, cell.courses.length) - padding * 2;
       return cell.courses.map((course) => {
         const layout = fitText(ctx, courseSections(course, referenceIds.get(course.id)), columnWidth - padding * 2 - 5 * scale, availableHeight, maximumText, minimumText);
         if (layout) return layout;
+        if (!showSupplementaryInfo) throw new Error(compactOverflowMessage);
         if (referenceIds.has(course.id)) throw new Error(overflowMessage);
         referenceIds.set(course.id, referenceIds.size + 1);
         addedReference = true;
@@ -263,10 +267,12 @@ export function drawScheduleImage(
       y += entry.layout.height + detailGap;
     }
   }
-  font(ctx, (portrait ? 19 : 17) * scale);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = colors.secondary;
-  ctx.fillText("履修計画用・正式な履修登録はポータルで完了してください。", margin, bottom + 24 * scale);
+  if (showSupplementaryInfo) {
+    font(ctx, (portrait ? 19 : 17) * scale);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = colors.secondary;
+    ctx.fillText("履修計画用・正式な履修登録はポータルで完了してください。", margin, bottom + 24 * scale);
+  }
   ctx.restore();
 }

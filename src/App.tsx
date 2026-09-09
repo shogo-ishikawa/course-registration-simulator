@@ -1947,22 +1947,27 @@ export default function Home() {
           </div>
 
           {requiredInOtherSemesters.length > 0 && (
-            <div className="required-other-semesters">
-              <strong>別学期で扱う必修</strong>
-              <p>次の科目は今期の未配置数に含めません。</p>
-              <ul>{requiredInOtherSemesters.map(({ required, selectedElsewhere, deferred }) => (
-                <li key={required.key}>
-                  <b>{required.name}</b>
-                  {selectedElsewhere.map((course) => (
-                    <span key={course.id}>{semesterQuarterLabel(course, courseSemesterAssignments[course.id])}で選択済みです。同じ科目は再追加しません。</span>
-                  ))}
-                  {deferred.map(({ course, classLabel }) => (
-                    <span key={`official-${course.id}`}>公式表では{semesterQuarterLabel(course)}（{classLabel}）に指定されています。</span>
-                  ))}
-                </li>
-              ))}</ul>
-              <small>選択済みの科目を変更・削除する場合は、その学期に切り替えてください。</small>
-            </div>
+            <details className="required-other-semesters disclosure" aria-labelledby="other-semester-required-title">
+              <summary>
+                <strong id="other-semester-required-title">別学期で扱う必修（{requiredInOtherSemesters.length}科目）</strong>
+                <span className="disclosure-action" aria-hidden="true"><span className="when-closed">開く ＋</span><span className="when-open">閉じる −</span></span>
+              </summary>
+              <div className="disclosure-body">
+                <p>次の科目は今期の未配置数に含めません。</p>
+                <ul>{requiredInOtherSemesters.map(({ required, selectedElsewhere, deferred }) => (
+                  <li key={required.key}>
+                    <b>{required.name}</b>
+                    {selectedElsewhere.map((course) => (
+                      <span key={course.id}>{semesterQuarterLabel(course, courseSemesterAssignments[course.id])}で選択済みです。同じ科目は再追加しません。</span>
+                    ))}
+                    {deferred.map(({ course, classLabel }) => (
+                      <span key={`official-${course.id}`}>公式表では{semesterQuarterLabel(course)}（{classLabel}）に指定されています。</span>
+                    ))}
+                  </li>
+                ))}</ul>
+                <small>選択済みの科目を変更・削除する場合は、その学期に切り替えてください。</small>
+              </div>
+            </details>
           )}
 
           {selectedRequiredChoices.length > 0 && (

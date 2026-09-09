@@ -1333,25 +1333,27 @@ export default function Home() {
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
           </p>
-          <aside className="intro-update-history" aria-labelledby="intro-update-history-title">
-            <div className="intro-update-history-heading">
-              <div>
-                <span>WHAT'S NEW</span>
-                <h2 id="intro-update-history-title">最近の更新</h2>
+          <details className="intro-update-history disclosure" aria-labelledby="intro-update-history-title">
+            <summary>
+              <strong id="intro-update-history-title">最近の更新</strong>
+              <span className="disclosure-action" aria-hidden="true"><span className="when-closed">開く ＋</span><span className="when-open">閉じる −</span></span>
+            </summary>
+            <div className="disclosure-body">
+              <div className="intro-update-history-heading">
+                <button type="button" onClick={() => setUpdateHistoryOpen(true)}>
+                  更新履歴をすべて見る
+                </button>
               </div>
-              <button type="button" onClick={() => setUpdateHistoryOpen(true)}>
-                すべて見る
-              </button>
+              <ol>
+                {updateHistory.slice(0, 3).map((entry, index) => (
+                  <li key={`${entry.updatedAt}-summary-${index}`}>
+                    <i aria-hidden="true" />
+                    <span>{formatHistoryEntry(entry)}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <ol>
-              {updateHistory.slice(0, 3).map((entry, index) => (
-                <li key={`${entry.updatedAt}-summary-${index}`}>
-                  <i aria-hidden="true" />
-                  <span>{formatHistoryEntry(entry)}</span>
-                </li>
-              ))}
-            </ol>
-          </aside>
+          </details>
         </div>
 
         <div className="profile-card">
@@ -1441,29 +1443,46 @@ export default function Home() {
             </div>
           </div>
 
-          <section className="class-guidance" aria-label="公式クラス分け表の確認">
-            <strong>クラス分け表を確認してください</strong>
-            <p role="status">{classLookupMessage}</p>
-            {classLookup.blockedKeys.length > 0 && (
-              <p className="class-mismatch">手動確認が必要：{classLookup.blockedKeys.join("、")}</p>
-            )}
-            {classLookup.matches.length > 0 && (
-              <ul>{classLookup.matches.map(({ course, classLabel }) => (
-                <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：{classLabel}（{quarterLabel(course)} · {slotLabel(course)}）</li>
-              ))}</ul>
-            )}
-            {classLookup.deferredMatches.length > 0 && (
-              <ul className="official-other-semester">{classLookup.deferredMatches.map(({ course, classLabel }) => (
-                <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
-              ))}</ul>
-            )}
-            <FirstYearMaterialLink enabled={classGuidanceInScope}
-              className="class-table-button" href={departmentGuidance.classTableUrl}
-              onOpen={() => setOpenedClassContext(classContext)}>
-              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
-            </FirstYearMaterialLink>
-            <small>科目ごとにクラスが異なる場合があります。自動選択後も、公式表でご自身の学籍番号・科目・担当教員を照合してください。</small>
-          </section>
+          <details className="class-guidance disclosure" aria-labelledby="class-guidance-title">
+            <summary>
+              <span className="disclosure-heading">
+                <strong id="class-guidance-title">クラス分け表を確認してください</strong>
+                <span className="disclosure-status" role="status">
+                  {!classGuidanceInScope ? "1年生向けの資料です"
+                    : classLookup.status === "invalid" ? "学籍番号の入力形式を確認してください"
+                      : classLookup.status === "not-found" ? "対応するクラスが見つかりません・手動確認が必要です"
+                        : classLookup.status === "needs-review" || classLookup.blockedKeys.length > 0 ? "自動判定できない科目があります・手動確認が必要です"
+                          : classLookup.status === "unverified" ? "自動判定は準備中です・公式表で確認してください"
+                            : classTableConfirmed ? "公式表で自己確認済み"
+                              : classLookup.status === "empty" ? "学籍番号を入力するとクラス候補を確認できます"
+                                : "自動選択後も公式表で照合してください"}
+                </span>
+              </span>
+              <span className="disclosure-action" aria-hidden="true"><span className="when-closed">開く ＋</span><span className="when-open">閉じる −</span></span>
+            </summary>
+            <div className="disclosure-body">
+              <p>{classLookupMessage}</p>
+              {classLookup.blockedKeys.length > 0 && (
+                <p className="class-mismatch">手動確認が必要：{classLookup.blockedKeys.join("、")}</p>
+              )}
+              {classLookup.matches.length > 0 && (
+                <ul>{classLookup.matches.map(({ course, classLabel }) => (
+                  <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：{classLabel}（{quarterLabel(course)} · {slotLabel(course)}）</li>
+                ))}</ul>
+              )}
+              {classLookup.deferredMatches.length > 0 && (
+                <ul className="official-other-semester">{classLookup.deferredMatches.map(({ course, classLabel }) => (
+                  <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
+                ))}</ul>
+              )}
+              <FirstYearMaterialLink enabled={classGuidanceInScope}
+                className="class-table-button" href={departmentGuidance.classTableUrl}
+                onOpen={() => setOpenedClassContext(classContext)}>
+                {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+              </FirstYearMaterialLink>
+              <small>科目ごとにクラスが異なる場合があります。自動選択後も、公式表でご自身の学籍番号・科目・担当教員を照合してください。</small>
+            </div>
+          </details>
 
           <div className="profile-row option-grid">
             <label className="check-option">
@@ -1685,45 +1704,50 @@ export default function Home() {
             </div>
           </div>
 
-          <section className="schedule-output-controls" aria-labelledby="schedule-output-heading">
-            <h3 id="schedule-output-heading">画像保存・印刷</h3>
-            <p>科目名・キャンパス・教室・担当教員名を載せて出力します。学籍番号は含みません。</p>
-            <div className="output-options-grid">
-              <fieldset className="image-output-options" disabled={imageExporting}>
-                <legend>壁紙用の画像</legend>
-                <div className="image-option-fields">
-                  <label><span>クウォーター</span><select aria-label="画像にするクウォーター" value={imageQuarter} onChange={(event) => setImageQuarter(Number(event.target.value))}>
-                    {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{q}Qのみ</option>)}
+          <details className="schedule-output-controls disclosure" aria-labelledby="schedule-output-heading">
+            <summary>
+              <strong id="schedule-output-heading">画像保存・印刷</strong>
+              <span className="disclosure-action" aria-hidden="true"><span className="when-closed">開く ＋</span><span className="when-open">閉じる −</span></span>
+            </summary>
+            <div className="disclosure-body">
+              <p>科目名・キャンパス・教室・担当教員名を載せて出力します。学籍番号は含みません。</p>
+              <div className="output-options-grid">
+                <fieldset className="image-output-options" disabled={imageExporting}>
+                  <legend>壁紙用の画像</legend>
+                  <div className="image-option-fields">
+                    <label><span>クウォーター</span><select aria-label="画像にするクウォーター" value={imageQuarter} onChange={(event) => setImageQuarter(Number(event.target.value))}>
+                      {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{q}Qのみ</option>)}
+                    </select></label>
+                    <label><span>画像形式</span><select aria-label="画像形式" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as ImageFormat)}>
+                      <option value="png">PNG（文字がくっきり）</option><option value="jpeg">JPEG</option>
+                    </select></label>
+                    <label className="image-size-option"><span>画像サイズ</span><select aria-label="壁紙の画像サイズ" value={imageSize} onChange={(event) => setImageSize(event.target.value)}>
+                      {SCHEDULE_IMAGE_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                    </select></label>
+                  </div>
+                  <div className="output-buttons">
+                    <button className="primary-button" onClick={() => exportScheduleImage("save")}>{imageExporting ? "画像を作成中…" : "画像を保存"}</button>
+                    <button className="soft-button share-schedule-button" onClick={() => exportScheduleImage("share")}>スマホへ共有</button>
+                  </div>
+                </fieldset>
+                <fieldset className="print-output-options">
+                  <legend>印刷・PDF保存</legend>
+                  <label><span>印刷する範囲</span><select aria-label="印刷する範囲" value={printScope} onChange={(event) => setPrintScope(event.target.value as TimetableOutputScope)}>
+                    {(["q1", "q2", "q3", "q4", "spring", "fall"] as TimetableOutputScope[]).map((scope) => <option key={scope} value={scope}>{outputScopeLabel(scope)}</option>)}
                   </select></label>
-                  <label><span>画像形式</span><select aria-label="画像形式" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as ImageFormat)}>
-                    <option value="png">PNG（文字がくっきり）</option><option value="jpeg">JPEG</option>
-                  </select></label>
-                  <label className="image-size-option"><span>画像サイズ</span><select aria-label="壁紙の画像サイズ" value={imageSize} onChange={(event) => setImageSize(event.target.value)}>
-                    {SCHEDULE_IMAGE_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-                  </select></label>
-                </div>
-                <div className="output-buttons">
-                  <button className="primary-button" onClick={() => exportScheduleImage("save")}>{imageExporting ? "画像を作成中…" : "画像を保存"}</button>
-                  <button className="soft-button share-schedule-button" onClick={() => exportScheduleImage("share")}>スマホへ共有</button>
-                </div>
-              </fieldset>
-              <fieldset className="print-output-options">
-                <legend>印刷・PDF保存</legend>
-                <label><span>印刷する範囲</span><select aria-label="印刷する範囲" value={printScope} onChange={(event) => setPrintScope(event.target.value as TimetableOutputScope)}>
-                  {(["q1", "q2", "q3", "q4", "spring", "fall"] as TimetableOutputScope[]).map((scope) => <option key={scope} value={scope}>{outputScopeLabel(scope)}</option>)}
-                </select></label>
-                <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
-                <small>A4横向き。クウォーターごとにページを分けます。印刷画面からPDFとして保存することもできます。</small>
-              </fieldset>
+                  <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
+                  <small>A4横向き。クウォーターごとにページを分けます。印刷画面からPDFとして保存することもできます。</small>
+                </fieldset>
+              </div>
+              <p className="output-detail-note">集中講義・曜日時限が未定の科目は別欄に記載します。画像の教室・担当が長い場合は、番号付きの詳細欄に全文を載せます。</p>
+              {imagePreview && <figure className="schedule-image-preview">
+                <figcaption>作成した画像：{imagePreview.label}</figcaption>
+                <img src={imagePreview.url} alt={`${imagePreview.label}の時間割。科目名・キャンパス・教室・担当教員名を掲載。`} />
+                <a className="soft-button" href={imagePreview.url} download={imagePreview.filename}>この画像をダウンロード</a>
+                <small>スマホでは画像を長押しして保存できます。壁紙に設定するときは、時間割が切れないように表示範囲を調整してください。</small>
+              </figure>}
             </div>
-            <p className="output-detail-note">集中講義・曜日時限が未定の科目は別欄に記載します。画像の教室・担当が長い場合は、番号付きの詳細欄に全文を載せます。</p>
-            {imagePreview && <figure className="schedule-image-preview">
-              <figcaption>作成した画像：{imagePreview.label}</figcaption>
-              <img src={imagePreview.url} alt={`${imagePreview.label}の時間割。科目名・キャンパス・教室・担当教員名を掲載。`} />
-              <a className="soft-button" href={imagePreview.url} download={imagePreview.filename}>この画像をダウンロード</a>
-              <small>スマホでは画像を長押しして保存できます。壁紙に設定するときは、時間割が切れないように表示範囲を調整してください。</small>
-            </figure>}
-          </section>
+          </details>
 
           <p className="local-save-note">
             変更内容はこのブラウザにも自動保存されます。「端末に保存」で別の端末へ移せるJSONファイルを作成できます（学籍番号は含みません）。

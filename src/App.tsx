@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
 import updateHistoryJson from "./data/update-history.json";
@@ -281,6 +281,24 @@ function slotLabel(course: Course) {
   return course.slots.length
     ? course.slots.map((slot) => slot.label).join("・")
     : "時間外・集中";
+}
+
+function FirstYearMaterialLink({ enabled, href, className, children, onOpen, label }: {
+  enabled: boolean;
+  href: string;
+  className: string;
+  children: ReactNode;
+  onOpen?: () => void;
+  label?: string;
+}) {
+  // A disabled native button has no URL: mouse, keyboard, and context-menu
+  // navigation are all unavailable outside the material's target year.
+  return enabled ? (
+    <a className={className} href={href} target="_blank" rel="noopener noreferrer"
+      aria-label={label} onClick={onOpen}>{children}</a>
+  ) : (
+    <button type="button" className={className} disabled aria-label={label}>{children}</button>
+  );
 }
 
 export default function Home() {
@@ -1295,7 +1313,7 @@ export default function Home() {
       <section className="intro-panel">
         <div className="intro-copy">
           <p className="eyebrow light">BUILD YOUR SCHEDULE</p>
-          <h1>迷わず組める、<br />あなたの時間割。</h1>
+          <h1>時間割モデルを、<br />手軽に作成。</h1>
           <p className="intro-description">
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
@@ -1376,17 +1394,16 @@ export default function Home() {
               />
             </label>
           </div>
-          <a
+          <FirstYearMaterialLink
+            enabled={classGuidanceInScope}
             className="department-guidance-link"
             href={departmentGuidance.guidanceUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`${courseData.departments[department].name}を選択中。1年生向け時間割作成用資料掲載サイトを開く`}
+            label={`${courseData.departments[department].name}の1年生向け時間割作成用資料${classGuidanceInScope ? "を開く" : "：1年生のみ利用できます"}`}
           >
-            <span>時間割作成用資料掲載サイト</span>
+            <span>1年生向け時間割作成用資料</span>
             <strong>{courseData.departments[department].name}の資料を確認</strong>
-            <small>2026年度・1年生向けの公式資料を開く ↗</small>
-          </a>
+            <small>{classGuidanceInScope ? "時間割作成用資料掲載サイトを開く ↗" : "1年生向けのため、2～4年生では利用できません"}</small>
+          </FirstYearMaterialLink>
 
           <div className="profile-row">
             <span className="field-label">学年</span>
@@ -1417,11 +1434,11 @@ export default function Home() {
                 <li key={course.id}>{course.baseTitle}：{classLabel}（{slotLabel(course)}）</li>
               ))}</ul>
             )}
-            <a className="class-table-button" href={departmentGuidance.classTableUrl}
-              target="_blank" rel="noopener noreferrer"
-              onClick={() => setOpenedClassContext(classContext)}>
-              クラス分け表で正しいクラスか確認する ↗
-            </a>
+            <FirstYearMaterialLink enabled={classGuidanceInScope}
+              className="class-table-button" href={departmentGuidance.classTableUrl}
+              onOpen={() => setOpenedClassContext(classContext)}>
+              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+            </FirstYearMaterialLink>
             <small>科目ごとにクラスが異なる場合があります。自動選択後も、公式表でご自身の学籍番号・科目・担当教員を照合してください。</small>
           </section>
 
@@ -1799,11 +1816,11 @@ export default function Home() {
 
           <div className="class-verification">
             <strong>{!classGuidanceInScope ? "対象学年のクラスを確認してください" : classTableConfirmed ? "公式表で確認済み（自己確認）" : "クラス分け表で要確認"}</strong>
-            <a className="class-table-button" href={classGuidanceInScope ? departmentGuidance.classTableUrl : departmentGuidance.guidanceUrl}
-              target="_blank" rel="noopener noreferrer"
-              onClick={() => setOpenedClassContext(classContext)}>
-              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "学科の時間割作成用資料を開く ↗"}
-            </a>
+            <FirstYearMaterialLink enabled={classGuidanceInScope}
+              className="class-table-button" href={departmentGuidance.classTableUrl}
+              onOpen={() => setOpenedClassContext(classContext)}>
+              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+            </FirstYearMaterialLink>
             {classGuidanceInScope && selectedRequiredChoices.length > 0 && (
               <label>
                 <input type="checkbox" checked={classTableConfirmed}

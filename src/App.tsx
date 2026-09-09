@@ -6,6 +6,7 @@ import guidanceJson from "./data/department-guidance.json";
 import { lookupClasses, type GuidanceData } from "./class-guidance";
 import { belongsToSemester, deriveRequiredSelection, quarterLabel, semesterQuarterLabel } from "./required-selection";
 import { isCourseCompatible } from "./course-compatibility";
+import { buildCourseClassSelection } from "./course-class-selection";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -14,6 +15,13 @@ type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
 type ScheduleExportFormat = "xlsx" | "csv";
 type BlockingError = { title: string; message: string; courseTitle: string };
+type ClassChoice = {
+  course: Course;
+  chosenId: string;
+  replacingId?: string;
+  source: "required" | "elective";
+  assignedSemester?: Semester;
+};
 type UpdateHistoryEntry = {
   updatedAt: string;
   message: string;
@@ -292,6 +300,7 @@ export default function Home() {
   const [requiredEditMode, setRequiredEditMode] = useState(false);
   const [activeSlot, setActiveSlot] = useState<{ day: Day; period: number } | null>(null);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
+  const [classChoice, setClassChoice] = useState<ClassChoice | null>(null);
   const [syllabusCopyResult, setSyllabusCopyResult] = useState<{
     courseId: string;
     status: "copied" | "failed";
@@ -352,6 +361,7 @@ export default function Home() {
     selectedCourses.filter(courseBelongsToActiveSemester).map((course) => course.id).sort(),
   ]);
   const classGuidanceInScope = classLookup.status !== "out-of-scope";
+  useEffect(() => { setClassChoice(null); }, [department, year, semester, studentNumber]);
   const classTableConfirmed = classGuidanceInScope && confirmedClassContext === classContext;
   useEffect(() => {
     // Returning to an older selection must not restore an earlier confirmation.
@@ -371,7 +381,7 @@ export default function Home() {
             : classLookup.status === "needs-review"
               ? "一部の科目は番号の指定・コース条件・資料の不一致により自動判定できません。公式表で確認し、手動で選択してください。"
               : classLookup.matches.length
-                ? `公式表に基づく今期のクラス候補が${classLookup.matches.length}科目あります。「必修を自動配置」で未選択の必修に反映できます。`
+                ? `公式表に基づく今期のクラス候補が${classLookup.matches.length}科目あります。必修は「必修を自動配置」、選択科目は「クラス分けのある選択科目」や時間割の空きコマから追加できます。`
                 : "公式表で別学期に指定された科目があります。開講Qを確認してください。";
 
   const requiredSelection = useMemo(
@@ -458,7 +468,7 @@ export default function Home() {
     setNotice(`「${course.title}」を時間割から外しました。`);
   }
 
-  function replaceRequiredCourse(currentCourse: Course, nextCourse: Course) {
+  function replaceSelectedCourse(currentCourse: Course, nextCourse: Course) {
     if (currentCourse.id === nextCourse.id) return false;
     const otherCourses = selectedCourses.filter((course) => course.id !== currentCourse.id);
     const conflict = conflictMessage(nextCourse, otherCourses);
@@ -472,19 +482,65 @@ export default function Home() {
     setSelectionSources((current) => {
       const next = { ...current };
       delete next[currentCourse.id];
-      next[nextCourse.id] = "required";
+      next[nextCourse.id] = current[currentCourse.id] ?? (requiredForProfile.some((required) => required.key === nextCourse.key) ? "required" : "elective");
       return next;
     });
     setCourseSemesterAssignments((current) => {
       if (!current[currentCourse.id]) return current;
-      const next = { ...current, [nextCourse.id]: current[currentCourse.id] };
+      const next = { ...current };
+      if (isAnnualCourse(nextCourse) || isIntensiveCourse(nextCourse)) {
+        next[nextCourse.id] = current[currentCourse.id];
+      }
       delete next[currentCourse.id];
       return next;
     });
     setNotice(
-      `「${currentCourse.title}」を${slotLabel(nextCourse)}のクラスへ変更しました。`,
+      `「${currentCourse.title}」を${semesterQuarterLabel(nextCourse)}・${slotLabel(nextCourse)}のクラスへ変更しました。`,
     );
     return true;
+  }
+
+  function classSelectionFor(course: Course) {
+    // Annual/intensive courses keep their dedicated semester assignment flow.
+    // The official class tables describe regular quarter-based classes.
+    const special = isAnnualCourse(course) || isIntensiveCourse(course);
+    return buildCourseClassSelection({ course,
+      candidates: special ? [course] : compatibleCourses.filter((candidate) => !isAnnualCourse(candidate) && !isIntensiveCourse(candidate)),
+      lookup: classLookup, coveredCourseKeys: special ? [] : departmentGuidance.coveredCourseKeys ?? [] });
+  }
+
+  // Opening the class chooser does not add a subject. Its initial selection is
+  // the verified class; editing starts with the student's existing choice.
+  function chooseCourseClass(course: Course, source: "required" | "elective", assignedSemester?: Semester, replacingId?: string) {
+    const selection = classSelectionFor(course);
+    if (!selection.isClassDivided && !replacingId) return addCourse(course, source, assignedSemester);
+    setClassChoice({ course, source, assignedSemester, replacingId,
+      chosenId: replacingId ?? selection.defaultCourse.id });
+    setActiveSlot(null);
+    setDetailCourse(null);
+    return true;
+  }
+
+  const classChoiceSelection = classChoice ? classSelectionFor(classChoice.course) : null;
+  const chosenClass = classChoiceSelection?.options.find((course) => course.id === classChoice?.chosenId) ?? null;
+
+  function confirmCourseClass() {
+    if (!classChoice || !chosenClass) return;
+    const current = classChoice.replacingId ? courseById.get(classChoice.replacingId) : null;
+    if (classChoice.replacingId && !selectedIds.includes(classChoice.replacingId)) return;
+    const special = isAnnualCourse(chosenClass) || isIntensiveCourse(chosenClass);
+    const changed = current
+      ? current.id === chosenClass.id || replaceSelectedCourse(current, chosenClass)
+      : addCourse(chosenClass, classChoice.source, special ? classChoice.assignedSemester : undefined);
+    if (!changed) return;
+    setClassChoice(null);
+    if (!special && chosenClass.quarters.length) {
+      const targetQuarter = chosenClass.quarters.includes(quarter) ? quarter : chosenClass.quarters[0];
+      setQuarter(targetQuarter);
+      setSemester(targetQuarter <= 2 ? "spring" : "fall");
+      setScheduleView("quarter");
+    }
+    setNotice(`「${chosenClass.title}」の${semesterQuarterLabel(chosenClass)}・${slotLabel(chosenClass)}のクラスを${current ? "選択しています" : "追加しました"}。担当：${chosenClass.instructors || "未記載"}。クラス分け表で確認してください。`);
   }
 
   function autoPlaceRequired() {
@@ -627,6 +683,16 @@ export default function Home() {
       }),
     [requiredSelection, classLookup.matches],
   );
+
+  const electiveClassGroups = [...new Set(compatibleCourses.filter((course) =>
+    course.year === year && !isAnnualCourse(course) && !isIntensiveCourse(course) && departmentGuidance.coveredCourseKeys?.includes(course.key) &&
+    !courseData.departments[department].required.some((required) => required.year === year && required.key === course.key),
+  ).map((course) => course.key))].map((key) => {
+    const course = compatibleCourses.find((candidate) => candidate.key === key && candidate.year === year)!;
+    return { course, selection: classSelectionFor(course), selected: selectedCourses.find((candidate) => candidate.key === key) };
+  });
+  const selectedElectiveChoices = selectedCourses.filter((course) => courseBelongsToActiveSemester(course) &&
+    !requiredForProfile.some((required) => required.key === course.key) && classSelectionFor(course).isClassDivided);
 
   const halfCourses = selectedCourses.filter((course) =>
     courseBelongsToActiveSemester(course),
@@ -1761,12 +1827,12 @@ export default function Home() {
               onOpen={() => setOpenedClassContext(classContext)}>
               {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
             </FirstYearMaterialLink>
-            {classGuidanceInScope && selectedRequiredChoices.length > 0 && (
+            {classGuidanceInScope && selectedRequiredChoices.length + selectedElectiveChoices.length > 0 && (
               <label>
                 <input type="checkbox" checked={classTableConfirmed}
                   disabled={openedClassContext !== classContext && !classTableConfirmed}
                   onChange={(event) => setConfirmedClassContext(event.target.checked ? classContext : null)} />
-                選択済みのクラスを公式表と照合しました
+                現在の学期で選択済みのクラスを公式表と照合しました
               </label>
             )}
             <small>{classGuidanceInScope ? "リンクを開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
@@ -1838,7 +1904,7 @@ export default function Home() {
                               key={candidate.id}
                               disabled={isCurrent}
                               onClick={() =>
-                                replaceRequiredCourse(course, candidate) && setRequiredOpenKey(null)
+                                replaceSelectedCourse(course, candidate) && setRequiredOpenKey(null)
                               }
                             >
                               <strong>{quarterLabel(candidate)} · {slotLabel(candidate)}{isCurrent ? "（現在のクラス）" : ""}</strong>
@@ -1894,6 +1960,31 @@ export default function Home() {
             <strong>候補が多いときは</strong>
             <p>科目の「履修制限」と学籍番号別のクラス表を照合してください。このシミュレータは確定登録の代わりにはなりません。</p>
           </div>
+          {electiveClassGroups.length > 0 && (
+            <section className="elective-class-section" aria-labelledby="elective-class-heading">
+              <h2 id="elective-class-heading">クラス分けのある選択科目</h2>
+              <p>履修する科目を選ぶと、学籍番号の指定クラスが最初から選択されます。開講Q・担当教員を確認して追加してください。手動変更もできます。</p>
+              {electiveClassGroups.map(({ course, selection, selected }) => (
+                <article className="selected-required-card" key={course.key}>
+                  <strong>{course.baseTitle}</strong>
+                  {selection.recommended ? (
+                    <p>指定クラス：{semesterQuarterLabel(selection.recommended)} · {slotLabel(selection.recommended)}<br />{selection.recommended.instructors}</p>
+                  ) : <p>{classLookup.status === "empty" ? "学籍番号を入力すると指定クラスを判定します。" : "クラスを自動判定できません。公式表を確認し、手動で選択してください。"}</p>}
+                  {selected && <p className="selected-course-note">選択済み：{semesterQuarterLabel(selected)} · {slotLabel(selected)}<br />{selected.instructors}</p>}
+                  {selected && selection.recommended && selected.id !== selection.recommended.id && (
+                    <p className="class-mismatch">公式表の指定クラスと異なります。現在の選択を公式表と照合してください。</p>
+                  )}
+                  <div className="selected-required-actions">
+                    <button className="change-class-button" onClick={() => chooseCourseClass(selected ?? course, "elective", undefined, selected?.id)}>{selected ? "クラス変更" : "クラスを選んで追加"}</button>
+                    {selected && <button className="delete-class-button" onClick={() => removeCourse(selected)}>削除</button>}
+                  </div>
+                </article>
+              ))}
+              <FirstYearMaterialLink enabled={classGuidanceInScope} className="class-table-button" href={departmentGuidance.classTableUrl} onOpen={() => setOpenedClassContext(classContext)}>
+                {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+              </FirstYearMaterialLink>
+            </section>
+          )}
         </aside>
       </section>
 
@@ -1987,7 +2078,7 @@ export default function Home() {
                     <h3>{course.title}</h3>
                     <p>{course.instructors || "担当教員未記載"}</p>
                     <dl>
-                      <div><dt>開講</dt><dd>{slotLabel(course)}</dd></div>
+                      <div><dt>開講</dt><dd>{quarterLabel(course)} · {slotLabel(course)}</dd></div>
                       <div><dt>場所</dt><dd>{course.campus}</dd></div>
                       <div><dt>単位</dt><dd>{courseCredits(course, department) ?? "要確認"}</dd></div>
                     </dl>
@@ -1995,7 +2086,7 @@ export default function Home() {
                   </div>
                   <div className="drawer-course-actions">
                     <button className="soft-button" onClick={() => setDetailCourse(course)}>詳細</button>
-                    <button className="primary-button" onClick={() => addCourse(course, "elective") && setActiveSlot(null)}>追加</button>
+                    <button className="primary-button" onClick={() => chooseCourseClass(course, "elective") && setActiveSlot(null)}>追加</button>
                   </div>
                 </article>
               ))}
@@ -2055,8 +2146,56 @@ export default function Home() {
               </button>
               <a href={detailCourse.syllabusSearchUrl} target="_blank" rel="noreferrer" className="soft-button">シラバス検索画面を開く</a>
               {!selectedIds.includes(detailCourse.id) && (
-                <button className="primary-button" onClick={() => addCourse(detailCourse, "elective", scheduleView !== "quarter" ? semester : undefined) && setDetailCourse(null)}>履修案に追加</button>
+                <button className="primary-button" onClick={() => chooseCourseClass(detailCourse, "elective", isAnnualCourse(detailCourse) || isIntensiveCourse(detailCourse) ? semester : undefined) && setDetailCourse(null)}>履修案に追加</button>
               )}
+              {selectedIds.includes(detailCourse.id) && classSelectionFor(detailCourse).isClassDivided && (
+                <button className="primary-button" onClick={() => chooseCourseClass(detailCourse, selectionSources[detailCourse.id] ?? "elective", courseSemesterAssignments[detailCourse.id], detailCourse.id)}>クラス変更</button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+      {classChoice && classChoiceSelection && chosenClass && (
+        <div className="modal-backdrop" onMouseDown={() => setClassChoice(null)}>
+          <section className="detail-modal class-choice-modal" role="dialog" aria-modal="true" aria-labelledby="class-choice-title"
+            onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") setClassChoice(null); }}>
+            <button className="modal-close" onClick={() => setClassChoice(null)} aria-label="閉じる">×</button>
+            <p className="eyebrow">CHOOSE A CLASS</p>
+            <h2 id="class-choice-title">{classChoice.course.baseTitle}のクラス{classChoice.replacingId ? "変更" : "選択"}</h2>
+            {classChoiceSelection.recommended ? (
+              <div className="class-choice-recommendation">
+                <strong>学籍番号による指定クラス</strong>
+                <p>{semesterQuarterLabel(classChoiceSelection.recommended)} · {slotLabel(classChoiceSelection.recommended)}<br />{classChoiceSelection.recommended.instructors}</p>
+                {chosenClass.id !== classChoiceSelection.recommended.id && (
+                  <button className="soft-button" onClick={() => setClassChoice({ ...classChoice, chosenId: classChoiceSelection.recommended!.id })}>指定クラスを選択する</button>
+                )}
+              </div>
+            ) : <p className="class-mismatch">{classLookup.status === "empty" ? "学籍番号が未入力のため自動判定していません。" : "この科目の指定クラスを確定できません。"}公式表を確認し、手動でクラスを選択してください。</p>}
+            <label className="class-choice-field" htmlFor="class-choice-select">
+              <span>クラス（手動で変更できます）</span>
+              <select id="class-choice-select" value={chosenClass.id} autoFocus onChange={(event) => setClassChoice({ ...classChoice, chosenId: event.target.value })}>
+                {classChoiceSelection.options.map((course) => (
+                  <option key={course.id} value={course.id}>{course.id === classChoiceSelection.recommended?.id ? "【指定】" : ""}{semesterQuarterLabel(course)} · {slotLabel(course)} · {course.instructors || "担当未記載"} · {course.id}</option>
+                ))}
+              </select>
+            </label>
+            <div className="detail-grid">
+              <div><span>開講期間・時限</span><strong>{semesterQuarterLabel(chosenClass)} · {slotLabel(chosenClass)}</strong></div>
+              <div><span>担当教員</span><strong>{chosenClass.instructors || "未記載"}</strong></div>
+              <div><span>キャンパス・教室</span><strong>{chosenClass.campus} · {chosenClass.room || "未記載"}</strong></div>
+              <div><span>講義コード・単位</span><strong>{chosenClass.id} · {courseCredits(chosenClass, department) ?? "要確認"}単位</strong></div>
+            </div>
+            {!chosenClass.quarters.some((q) => semesterQuarters.includes(q)) && (
+              <p className="class-choice-term-notice">このクラスは{semesterQuarterLabel(chosenClass)}です。{classChoice.replacingId ? "変更" : "追加"}後に、その学期の時間割へ切り替わります。</p>
+            )}
+            {chosenClass.restriction && <div className="restriction-block"><strong>履修制限・対象</strong><p>{chosenClass.restriction}</p></div>}
+            <FirstYearMaterialLink enabled={classGuidanceInScope} className="class-table-button" href={departmentGuidance.classTableUrl} onOpen={() => setOpenedClassContext(classContext)}>
+              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+            </FirstYearMaterialLink>
+            <p>科目・開講Q・担当教員をご自身で確認してください。追加・変更後も公式表の確認が必要です。</p>
+            <div className="modal-actions">
+              <button className="soft-button" onClick={() => setClassChoice(null)}>キャンセル</button>
+              <button className="primary-button" onClick={confirmCourseClass}>{classChoice.replacingId ? "このクラスに変更" : "このクラスを履修案に追加"}</button>
             </div>
           </section>
         </div>

@@ -164,6 +164,13 @@ a.class-table-button:hover { background: #fff1ce; }
 .class-verification label { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: .875rem; line-height: 1.6; }
 .class-verification input { width: 18px; height: 18px; flex-shrink: 0; }
 .class-mismatch { display: block; margin-top: 8px; color: #a22525; font-size: .875rem; font-style: normal; }
+.required-other-semesters { margin-bottom: 18px; padding: 14px; border: 1px solid #b4c6e0; border-radius: 11px; color: #2a4365; background: #f3f7fc; overflow-wrap: anywhere; }
+.required-other-semesters > strong { display: block; font-size: 1rem; line-height: 1.5; }
+.required-other-semesters p, .required-other-semesters li, .required-other-semesters small { font-size: .875rem; line-height: 1.65; }
+.required-other-semesters ul { padding-left: 20px; }
+.required-other-semesters li + li { margin-top: 10px; }
+.required-other-semesters li b, .required-other-semesters li span, .required-other-semesters small { display: block; }
+.official-other-semester { border-top: 1px solid #dec17e; padding-top: 10px; }
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; border-radius: 11px; background: #eef2f7; }
 .segmented button { height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 800; color: #6f7a8e; }
 .segmented button.active { background: white; color: var(--blue); box-shadow: 0 2px 8px rgba(20,33,61,.1); }

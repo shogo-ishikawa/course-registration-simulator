@@ -4,6 +4,8 @@ import updateInfoJson from "./data/update-info.json";
 import updateHistoryJson from "./data/update-history.json";
 import guidanceJson from "./data/department-guidance.json";
 import { lookupClasses, type GuidanceData } from "./class-guidance";
+import { belongsToSemester, deriveRequiredSelection, quarterLabel, semesterQuarterLabel } from "./required-selection";
+import { isCourseCompatible } from "./course-compatibility";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -106,17 +108,6 @@ const semesterDetails: Record<Semester, { label: string; quarters: number[] }> =
   fall: { label: "後期", quarters: [3, 4] },
 };
 const departmentKeys = Object.keys(courseData.departments);
-const departmentTokens: Record<string, string[]> = {
-  機械: ["機械工学科", "機械"],
-  電気: ["電気電子工学科", "電気"],
-  土木: ["土木工学科", "土木"],
-  建築: ["建築工学科", "建築"],
-  応化: ["応用分子化学科", "応化"],
-  ＭＡ: ["マネジメント工学科", "MA", "ＭＡ"],
-  数情: ["数理情報工学科", "数情"],
-  環境: ["環境安全工学科", "環境"],
-  創生: ["創生デザイン学科", "創生"],
-};
 
 const capExemptKeys = new Set(
   [
@@ -226,28 +217,6 @@ function intensiveTimingLabel(course: Course) {
   return "実施時期は要確認";
 }
 
-function isCompatible(course: Course, department: string) {
-  if (course.category === department || course.category === "共通") return true;
-  if (["ＢＥ", "教職"].includes(course.category)) return true;
-  if (course.category !== "教養") return false;
-
-  const context = normalize(`${course.title}${course.restriction}`);
-  const mentionsAnotherDepartment = departmentKeys.some(
-    (key) =>
-      key !== department &&
-      departmentTokens[key].some((token) => context.includes(normalize(token))),
-  );
-  if (mentionsAnotherDepartment) return false;
-
-  const mentionsOwnDepartment = departmentTokens[department].some((token) =>
-    context.includes(normalize(token)),
-  );
-  const mentionsAnyDepartment = departmentKeys.some((key) =>
-    departmentTokens[key].some((token) => context.includes(normalize(token))),
-  );
-  return mentionsOwnDepartment || !mentionsAnyDepartment;
-}
-
 function conflictMessage(course: Course, selected: Course[]) {
   if (selected.some((item) => item.key === course.key)) {
     return "同じ科目がすでに選択されています。";
@@ -353,10 +322,7 @@ export default function Home() {
   const semesterLabel = semesterDetails[semester].label;
 
   function courseBelongsToActiveSemester(course: Course) {
-    const assignedSemester = courseSemesterAssignments[course.id];
-    return assignedSemester
-      ? assignedSemester === semester
-      : course.quarters.some((item) => semesterQuarters.includes(item));
+    return belongsToSemester(course, semester, semesterQuarters, courseSemesterAssignments);
   }
 
   const requiredForProfile = useMemo(() => {
@@ -369,7 +335,7 @@ export default function Home() {
     () =>
       courseData.courses.filter(
         (course) =>
-          isCompatible(course, department) &&
+          isCourseCompatible(course, department) &&
           course.year !== null &&
           course.year <= year,
       ),
@@ -403,23 +369,27 @@ export default function Home() {
           : classLookup.status === "not-found"
             ? "入力した学籍番号と学期に対応するクラスを確認できませんでした。公式表を確認して手動で選択してください。"
             : classLookup.status === "needs-review"
-              ? "一部のクラスは現在の時間割と照合できません。該当科目を自動選択せず、手動確認とします。"
-              : `公式表に基づくクラス候補が${classLookup.matches.length}科目あります。「必修を自動配置」で未選択の必修に反映できます。`;
+              ? "一部の科目は番号の指定・コース条件・資料の不一致により自動判定できません。公式表で確認し、手動で選択してください。"
+              : classLookup.matches.length
+                ? `公式表に基づく今期のクラス候補が${classLookup.matches.length}科目あります。「必修を自動配置」で未選択の必修に反映できます。`
+                : "公式表で別学期に指定された科目があります。開講Qを確認してください。";
 
-  const requiredForSemester = useMemo(
-    () =>
-      requiredForProfile.filter((required) => {
-        const candidates = compatibleCourses.filter(
-          (course) => course.key === required.key && course.year === year,
-        );
-        return (
-          candidates.length === 0 ||
-          candidates.some((course) =>
-            course.quarters.some((item) => semesterQuarters.includes(item)),
-          )
-        );
-      }),
-    [compatibleCourses, requiredForProfile, semesterQuarters, year],
+  const requiredSelection = useMemo(
+    () => deriveRequiredSelection({
+      requiredCourses: requiredForProfile,
+      candidates: compatibleCourses,
+      selectedCourses,
+      semester,
+      quarters: semesterQuarters,
+      assignments: courseSemesterAssignments,
+      deferredMatches: classLookup.deferredMatches,
+    }),
+    [requiredForProfile, compatibleCourses, selectedCourses, semester, semesterQuarters, courseSemesterAssignments, classLookup.deferredMatches],
+  );
+  const pendingRequiredEntries = requiredSelection.filter((entry) => entry.pending);
+  const pendingRequired = pendingRequiredEntries.map((entry) => entry.required);
+  const requiredInOtherSemesters = requiredSelection.filter((entry) =>
+    entry.selectedCurrent.length === 0 && (entry.selectedElsewhere.length > 0 || entry.deferred.length > 0),
   );
 
   function showBlockingIssue(course: Course, message: string) {
@@ -453,7 +423,8 @@ export default function Home() {
       showBlockingIssue(course, conflict);
       return false;
     }
-    const effectiveSource = requiredForSemester.some((required) => required.key === course.key)
+    // A manual override of the official semester is still a required subject.
+    const effectiveSource = requiredForProfile.some((required) => required.key === course.key)
       ? "required"
       : source;
     setSelectedIds((current) => [...current, course.id]);
@@ -522,12 +493,8 @@ export default function Home() {
     const skipped: string[] = [];
     let classCount = 0;
     const nextSources = { ...selectionSources };
-    for (const required of requiredForSemester) {
-      if (selectedCourses.some((course) => course.key === required.key && courseBelongsToActiveSemester(course))) continue;
-      const candidates = compatibleCourses.filter((course) =>
-        course.key === required.key && course.year === year &&
-        course.quarters.some((q) => semesterQuarters.includes(q)),
-      );
+    for (const { required, candidates } of pendingRequiredEntries) {
+      if ([...selectedCourses, ...automaticallyPlaced].some((course) => course.key === required.key)) continue;
       const mapped = classLookup.matches.find((match) => match.course.key === required.key);
       if (classLookup.blockedKeys.includes(required.key)) { skipped.push(required.name); continue; }
       const course = mapped?.course ?? (candidates.length === 1 ? candidates[0] : null);
@@ -652,37 +619,13 @@ export default function Home() {
     year,
   ]);
 
-  const pendingRequired = useMemo(
-    () =>
-      requiredForSemester.filter(
-        (required) =>
-          !selectedCourses.some(
-            (course) =>
-              course.key === required.key &&
-              course.quarters.some((item) => semesterQuarters.includes(item)),
-          ),
-      ),
-    [requiredForSemester, selectedCourses, semesterQuarters],
-  );
-
   const selectedRequiredChoices = useMemo(
-    () =>
-      requiredForSemester.flatMap((required) => {
-        const candidates = compatibleCourses.filter(
-          (course) =>
-            course.key === required.key &&
-            course.year === year &&
-            course.quarters.some((item) => semesterQuarters.includes(item)),
-        );
-        if (candidates.length <= 1) return [];
-        const selected = selectedCourses.find(
-          (course) =>
-            course.key === required.key &&
-            course.quarters.some((item) => semesterQuarters.includes(item)),
-        );
-        return selected ? [{ required, course: selected, candidates }] : [];
+    () => requiredSelection.flatMap(({ required, candidates, selectedCurrent, deferred }) => {
+        const officialMatches = [...classLookup.matches.filter((match) => match.course.key === required.key), ...deferred];
+        if (candidates.length <= 1 && officialMatches.length === 0) return [];
+        return selectedCurrent.map((course) => ({ required, course, candidates, officialMatches }));
       }),
-    [compatibleCourses, requiredForSemester, selectedCourses, semesterQuarters, year],
+    [requiredSelection, classLookup.matches],
   );
 
   const halfCourses = selectedCourses.filter((course) =>
@@ -791,17 +734,6 @@ export default function Home() {
       course.quarters.includes(quarter) &&
       (!course.slots.length || course.slots.some((slot) => slot.period > 5)),
   );
-
-  function requiredCandidates(required: RequiredCourse) {
-    return compatibleCourses
-      .filter(
-        (course) =>
-          course.key === required.key &&
-          course.year === year &&
-          course.quarters.some((item) => semesterQuarters.includes(item)),
-      )
-      .sort((a, b) => slotLabel(a).localeCompare(slotLabel(b), "ja"));
-  }
 
   function resetSchedule() {
     const preservedCourses = selectedCourses.filter(
@@ -1429,9 +1361,17 @@ export default function Home() {
           <section className="class-guidance" aria-label="公式クラス分け表の確認">
             <strong>クラス分け表を確認してください</strong>
             <p role="status">{classLookupMessage}</p>
+            {classLookup.blockedKeys.length > 0 && (
+              <p className="class-mismatch">手動確認が必要：{classLookup.blockedKeys.join("、")}</p>
+            )}
             {classLookup.matches.length > 0 && (
               <ul>{classLookup.matches.map(({ course, classLabel }) => (
-                <li key={course.id}>{course.baseTitle}：{classLabel}（{slotLabel(course)}）</li>
+                <li key={course.id}>{course.baseTitle}：{classLabel}（{quarterLabel(course)} · {slotLabel(course)}）</li>
+              ))}</ul>
+            )}
+            {classLookup.deferredMatches.length > 0 && (
+              <ul className="official-other-semester">{classLookup.deferredMatches.map(({ course, classLabel }) => (
+                <li key={course.id}>{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
               ))}</ul>
             )}
             <FirstYearMaterialLink enabled={classGuidanceInScope}
@@ -1811,7 +1751,7 @@ export default function Home() {
             <span>{pendingRequired.length}</span>
           </div>
           <p className="panel-description">
-            学籍番号、英語免除、再履修などでクラスが分かれる科目です。担当教員・教室も公式表と照合してください。
+            学籍番号、英語免除、再履修などでクラスが分かれる科目です。開講Q・担当教員・教室も公式表と照合してください。転コースなどの個別指定は、担任・担当教員の案内を確認してください。
           </p>
 
           <div className="class-verification">
@@ -1832,24 +1772,43 @@ export default function Home() {
             <small>{classGuidanceInScope ? "リンクを開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
           </div>
 
+          {requiredInOtherSemesters.length > 0 && (
+            <div className="required-other-semesters">
+              <strong>別学期で扱う必修</strong>
+              <p>次の科目は今期の未配置数に含めません。</p>
+              <ul>{requiredInOtherSemesters.map(({ required, selectedElsewhere, deferred }) => (
+                <li key={required.key}>
+                  <b>{required.name}</b>
+                  {selectedElsewhere.map((course) => (
+                    <span key={course.id}>{semesterQuarterLabel(course, courseSemesterAssignments[course.id])}で選択済みです。同じ科目は再追加しません。</span>
+                  ))}
+                  {deferred.map(({ course, classLabel }) => (
+                    <span key={`official-${course.id}`}>公式表では{semesterQuarterLabel(course)}（{classLabel}）に指定されています。</span>
+                  ))}
+                </li>
+              ))}</ul>
+              <small>選択済みの科目を変更・削除する場合は、その学期に切り替えてください。</small>
+            </div>
+          )}
+
           {selectedRequiredChoices.length > 0 && (
             <div className="selected-required-section">
               <div className="selected-required-label">
                 <span>選択済みクラス</span>
                 <b>{selectedRequiredChoices.length}</b>
               </div>
-              {selectedRequiredChoices.map(({ required, course, candidates }) => {
+              {selectedRequiredChoices.map(({ required, course, candidates, officialMatches }) => {
                 const open = requiredOpenKey === required.key;
                 return (
-                  <article className="selected-required-card" key={required.key}>
+                  <article className="selected-required-card" key={course.id}>
                     <div className="selected-required-summary">
                       <div>
                         <strong>{required.name}</strong>
-                        <span>{slotLabel(course)} · {course.campus}</span>
+                        <span>{quarterLabel(course)} · {slotLabel(course)} · {course.campus}</span>
                         <small>{course.instructors || "担当教員未記載"}{course.room ? ` · ${course.room}` : ""}</small>
-                        {classLookup.matches.some((match) => match.course.key === required.key && match.course.id !== course.id) && (
-                          <em className="class-mismatch">公式表に基づく候補と異なる選択です。クラスを確認してください。</em>
-                        )}
+                        {officialMatches.filter((match) => match.course.id !== course.id).map((match) => (
+                          <em className="class-mismatch" key={match.course.id}>公式表では{semesterQuarterLabel(match.course)}（{match.classLabel}）のクラスです。現在の選択は保持しています。公式表と照合してください。</em>
+                        ))}
                       </div>
                       <span className="selected-badge">{classTableConfirmed ? "自己確認済み" : "選択済み・要確認"}</span>
                     </div>
@@ -1882,7 +1841,7 @@ export default function Home() {
                                 replaceRequiredCourse(course, candidate) && setRequiredOpenKey(null)
                               }
                             >
-                              <strong>{slotLabel(candidate)}{isCurrent ? "（現在のクラス）" : ""}</strong>
+                              <strong>{quarterLabel(candidate)} · {slotLabel(candidate)}{isCurrent ? "（現在のクラス）" : ""}</strong>
                               <span>{candidate.instructors || "担当教員未記載"}{candidate.room ? ` · ${candidate.room}` : ""}</span>
                               <small>{candidate.campus}{candidate.restriction ? ` · ${candidate.restriction}` : ""}</small>
                             </button>
@@ -1898,10 +1857,10 @@ export default function Home() {
 
           <div className="required-list">
             {pendingRequired.length === 0 ? (
-              <div className="complete-state"><span>✓</span><strong>共通必修は配置済みです</strong><p>クラス分け科目は上の「選択済みクラス」から変更・削除できます。</p></div>
+              <div className="complete-state"><span>✓</span><strong>今期の未配置必修はありません</strong><p>別学期の指定は上の案内を確認してください。今期のクラス分け科目は「選択済みクラス」から変更・削除できます。</p></div>
             ) : (
-              pendingRequired.map((required) => {
-                const candidates = requiredCandidates(required);
+              pendingRequiredEntries.map(({ required, candidates: availableCandidates }) => {
+                const candidates = [...availableCandidates].sort((a, b) => quarterLabel(a).localeCompare(quarterLabel(b), "ja") || slotLabel(a).localeCompare(slotLabel(b), "ja"));
                 const open = requiredOpenKey === required.key;
                 return (
                   <article className="required-group" key={required.key}>
@@ -1916,7 +1875,7 @@ export default function Home() {
                             key={course.id}
                             onClick={() => addCourse(course, "required") && setRequiredOpenKey(null)}
                           >
-                            <strong>{slotLabel(course)}</strong>
+                            <strong>{quarterLabel(course)} · {slotLabel(course)}</strong>
                             <span>{course.instructors || "担当教員未記載"}{course.room ? ` · ${course.room}` : ""}</span>
                             <small>{course.campus}{course.restriction ? ` · ${course.restriction}` : ""}</small>
                           </button>

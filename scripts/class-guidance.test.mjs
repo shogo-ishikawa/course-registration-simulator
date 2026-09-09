@@ -42,6 +42,35 @@ test("a refreshed workbook cannot silently reinterpret a verified mapping", () =
   }
 });
 
+test("assignments in another semester retain the specified quarter", () => {
+  const later = { ...candidate, quarters: [3] };
+  const source = { ...data, departments: { TEST: { ...data.departments.TEST, rules: [{ ...rule, quarters: [3] }] } } };
+  const spring = lookup({}, [later], source);
+  assert.equal(spring.matches.length, 0);
+  assert.equal(spring.deferredMatches[0].course.id, later.id);
+  assert.deepEqual(spring.deferredMatches[0].course.quarters, [3]);
+  assert.equal(lookup({ quarters: [3, 4] }, [later], source).matches[0].course.id, later.id);
+  const conflicting = { ...source, departments: { TEST: { ...source.departments.TEST, rules: [rule, { ...rule, courseId: 'test-2', quarters: [3] }] } } };
+  assert.equal(lookup({}, [candidate, { ...later, id: 'test-2' }], conflicting).matches.length, 0);
+  assert.deepEqual(lookup({}, [candidate, { ...later, id: 'test-2' }], conflicting).blockedKeys, [rule.courseKey]);
+});
+
+test("compressed roster ranges preserve gaps and covered subjects require a match", () => {
+  const { studentFrom, studentTo, ...details } = rule;
+  const source = { ...data, departments: { TEST: { ...data.departments.TEST,
+    coveredCourseKeys: [rule.courseKey],
+    rules: [{ ...details, studentRanges: [{ from: '26B99001', to: '26B99003' }, { from: '26B99005', to: '26B99007' }] }],
+  } } };
+  for (const studentNumber of ['26B99001', '26B99003', '26B99005', '26B99007']) {
+    assert.equal(lookup({ studentNumber }, [candidate], source).matches[0]?.course.id, candidate.id);
+  }
+  for (const studentNumber of ['26B99004', '26B99008']) {
+    const result = lookup({ studentNumber }, [candidate], source);
+    assert.equal(result.matches.length, 0);
+    assert.deepEqual(result.blockedKeys, [rule.courseKey]);
+  }
+});
+
 test("all departments use confirmed official links; no unverified mapping is enabled", () => {
   const source = JSON.parse(readFileSync(new URL("../src/data/department-guidance.json", import.meta.url)));
   const courses = JSON.parse(readFileSync(new URL("../src/data/course-data.json", import.meta.url)));

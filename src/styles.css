@@ -171,6 +171,16 @@ a.class-table-button:hover { background: #fff1ce; }
 .required-other-semesters li + li { margin-top: 10px; }
 .required-other-semesters li b, .required-other-semesters li span, .required-other-semesters small { display: block; }
 .official-other-semester { border-top: 1px solid #dec17e; padding-top: 10px; }
+.elective-class-section { margin-top: 22px; padding-top: 18px; border-top: 2px solid #ccd9eb; }
+.elective-class-section h2 { font-size: 1.125rem; line-height: 1.6; }
+.elective-class-section p { font-size: .875rem; line-height: 1.7; overflow-wrap: anywhere; }
+.selected-course-note { padding: 8px; background: #eef5ff; border-radius: 7px; }
+.class-choice-recommendation { margin: 16px 0; padding: 14px; background: #eef5ff; border: 1px solid #abc5e9; border-radius: 10px; }
+.class-choice-recommendation p { margin: 8px 0; line-height: 1.7; }
+.class-choice-field { display: grid; gap: 8px; margin: 18px 0; font-weight: 700; }
+.class-choice-field select { width: 100%; min-width: 0; min-height: 48px; padding: 10px; border: 1px solid #8298b6; border-radius: 8px; font: inherit; background: white; }
+.class-choice-term-notice { padding: 12px; border-left: 4px solid #a96500; background: #fff3d6; line-height: 1.7; font-weight: 700; }
+.class-choice-modal > p { line-height: 1.7; }
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; border-radius: 11px; background: #eef2f7; }
 .segmented button { height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 800; color: #6f7a8e; }
 .segmented button.active { background: white; color: var(--blue); box-shadow: 0 2px 8px rgba(20,33,61,.1); }

@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
 import updateHistoryJson from "./data/update-history.json";
+import guidanceJson from "./data/department-guidance.json";
+import { lookupClasses, type GuidanceData } from "./class-guidance";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -96,17 +98,7 @@ const buildUpdatedAt = import.meta.env.VITE_BUILD_TIME || updateInfo.appUpdatedA
 const buildCommit = import.meta.env.VITE_BUILD_COMMIT || "local";
 const timetableSourcePage = updateInfo.sourcePageUrl;
 const updateHistory = updateHistoryJson as UpdateHistoryEntry[];
-const firstYearGuidanceUrls: Record<string, string> = {
-  機械: "https://sites.google.com/view/mimomi-guidance/home/mech_engr",
-  電気: "https://sites.google.com/view/mimomi-guidance/home/elec_eng",
-  土木: "https://sites.google.com/view/mimomi-guidance/home/civil_engr",
-  建築: "https://sites.google.com/view/mimomi-guidance/home/arch_engr",
-  応化: "https://sites.google.com/view/mimomi-guidance/home/amc",
-  ＭＡ: "https://sites.google.com/view/mimomi-guidance/home/ma",
-  数情: "https://sites.google.com/view/mimomi-guidance/home/math_engr",
-  環境: "https://sites.google.com/view/mimomi-guidance/home/sust_engr",
-  創生: "https://sites.google.com/view/mimomi-guidance/home/cd",
-};
+const guidanceData = guidanceJson as GuidanceData;
 const days: Day[] = ["月", "火", "水", "木", "金", "土"];
 const periods = [1, 2, 3, 4, 5];
 const semesterDetails: Record<Semester, { label: string; quarters: number[] }> = {
@@ -291,6 +283,24 @@ function slotLabel(course: Course) {
     : "時間外・集中";
 }
 
+function FirstYearMaterialLink({ enabled, href, className, children, onOpen, label }: {
+  enabled: boolean;
+  href: string;
+  className: string;
+  children: ReactNode;
+  onOpen?: () => void;
+  label?: string;
+}) {
+  // A disabled native button has no URL: mouse, keyboard, and context-menu
+  // navigation are all unavailable outside the material's target year.
+  return enabled ? (
+    <a className={className} href={href} target="_blank" rel="noopener noreferrer"
+      aria-label={label} onClick={onOpen}>{children}</a>
+  ) : (
+    <button type="button" className={className} disabled aria-label={label}>{children}</button>
+  );
+}
+
 export default function Home() {
   const [department, setDepartment] = useState("機械");
   const [year, setYear] = useState(1);
@@ -299,6 +309,8 @@ export default function Home() {
   const [scheduleView, setScheduleView] = useState<ScheduleView>("quarter");
   const [textSize, setTextSize] = useState<TextSize>("normal");
   const [studentNumber, setStudentNumber] = useState("");
+  const [openedClassContext, setOpenedClassContext] = useState<string | null>(null);
+  const [confirmedClassContext, setConfirmedClassContext] = useState<string | null>(null);
   const [toeicExempt, setToeicExempt] = useState(false);
   const [retakePriority, setRetakePriority] = useState(false);
   const [capLimits, setCapLimits] = useState<Record<Semester, CapLimit>>({
@@ -363,6 +375,36 @@ export default function Home() {
       ),
     [department, year],
   );
+
+  const departmentGuidance = guidanceData.departments[department];
+  const classLookup = useMemo(() => lookupClasses(guidanceData, {
+    department, year, academicYear: courseData.meta.academicYear,
+    studentNumber, quarters: semesterQuarters,
+  }, compatibleCourses), [department, year, studentNumber, semesterQuarters, compatibleCourses]);
+  const classContext = JSON.stringify([
+    department, year, semester, studentNumber,
+    selectedCourses.filter(courseBelongsToActiveSemester).map((course) => course.id).sort(),
+  ]);
+  const classGuidanceInScope = classLookup.status !== "out-of-scope";
+  const classTableConfirmed = classGuidanceInScope && confirmedClassContext === classContext;
+  useEffect(() => {
+    // Returning to an older selection must not restore an earlier confirmation.
+    setOpenedClassContext(null);
+    setConfirmedClassContext(null);
+  }, [classContext]);
+  const classLookupMessage = classLookup.status === "out-of-scope"
+    ? "このクラス分け表は2026年度の1年生向けです。上級年次・別年度のクラスは学科の案内で確認してください。"
+    : classLookup.status === "unverified"
+      ? "この学科の学籍番号による自動判定は準備中です。公式のクラス分け表で確認し、候補から選択してください。"
+      : classLookup.status === "empty"
+        ? "学籍番号を入力すると、公式表で対応を確認済みのクラスを候補に表示します。"
+        : classLookup.status === "invalid"
+          ? "学籍番号は入学年度と学科を含む8文字で入力してください。末尾の番号だけでは判定できません。"
+          : classLookup.status === "not-found"
+            ? "入力した学籍番号と学期に対応するクラスを確認できませんでした。公式表を確認して手動で選択してください。"
+            : classLookup.status === "needs-review"
+              ? "一部のクラスは現在の時間割と照合できません。該当科目を自動選択せず、手動確認とします。"
+              : `公式表に基づくクラス候補が${classLookup.matches.length}科目あります。「必修を自動配置」で未選択の必修に反映できます。`;
 
   const requiredForSemester = useMemo(
     () =>
@@ -475,43 +517,34 @@ export default function Home() {
   }
 
   function autoPlaceRequired() {
+    // Fill gaps only: preserve electives and every manually selected class.
     const automaticallyPlaced: Course[] = [];
-    const preservedCourses = selectedCourses.filter(
-      (course) => !courseBelongsToActiveSemester(course),
-    );
-    const nextSources: Record<string, "required" | "elective"> = Object.fromEntries(
-      preservedCourses.map((course) => [course.id, selectionSources[course.id] ?? "elective"]),
-    );
-
+    const skipped: string[] = [];
+    let classCount = 0;
+    const nextSources = { ...selectionSources };
     for (const required of requiredForSemester) {
-      const candidates = compatibleCourses.filter(
-        (course) =>
-          course.key === required.key &&
-          course.year === year &&
-          course.quarters.some((item) => semesterQuarters.includes(item)),
+      if (selectedCourses.some((course) => course.key === required.key && courseBelongsToActiveSemester(course))) continue;
+      const candidates = compatibleCourses.filter((course) =>
+        course.key === required.key && course.year === year &&
+        course.quarters.some((q) => semesterQuarters.includes(q)),
       );
-      if (candidates.length !== 1) continue;
-      const course = candidates[0];
-      if (!conflictMessage(course, [...preservedCourses, ...automaticallyPlaced])) {
-        automaticallyPlaced.push(course);
-        nextSources[course.id] = "required";
-      }
+      const mapped = classLookup.matches.find((match) => match.course.key === required.key);
+      if (classLookup.blockedKeys.includes(required.key)) { skipped.push(required.name); continue; }
+      const course = mapped?.course ?? (candidates.length === 1 ? candidates[0] : null);
+      if (!course) { skipped.push(required.name); continue; }
+      const conflict = conflictMessage(course, [...selectedCourses, ...automaticallyPlaced]);
+      if (conflict) { skipped.push(`${required.name}（${conflict}）`); continue; }
+      automaticallyPlaced.push(course);
+      nextSources[course.id] = "required";
+      if (mapped) classCount++;
     }
-
-    setSelectedIds([
-      ...preservedCourses.map((course) => course.id),
-      ...automaticallyPlaced.map((course) => course.id),
-    ]);
+    setSelectedIds((current) => [...current, ...automaticallyPlaced.map((course) => course.id)]);
     setSelectionSources(nextSources);
-    setCourseSemesterAssignments(
-      Object.fromEntries(
-        preservedCourses
-          .filter((course) => courseSemesterAssignments[course.id])
-          .map((course) => [course.id, courseSemesterAssignments[course.id]]),
-      ),
-    );
+    setConfirmedClassContext(null);
     setNotice(
-      `${semesterLabel}の共通必修${automaticallyPlaced.length}科目を配置しました。クラス分けがある必修は右側の候補から選んでください。`,
+      `${semesterLabel}の必修${automaticallyPlaced.length}科目を追加しました。既存の選択は保持しています。` +
+      (classCount ? `うち${classCount}科目は学籍番号からクラスを選択しました。必ず公式表で確認してください。` : "") +
+      (skipped.length ? ` 手動確認が必要：${skipped.join("、")}。右側の候補とクラス分け表を確認してください。` : ""),
     );
   }
 
@@ -1150,6 +1183,8 @@ export default function Home() {
         ),
       );
       setStudentNumber("");
+      setOpenedClassContext(null);
+      setConfirmedClassContext(null);
       setActiveSlot(null);
       setDetailCourse(null);
       setNotice(
@@ -1278,7 +1313,7 @@ export default function Home() {
       <section className="intro-panel">
         <div className="intro-copy">
           <p className="eyebrow light">BUILD YOUR SCHEDULE</p>
-          <h1>迷わず組める、<br />あなたの時間割。</h1>
+          <h1>時間割モデルを、<br />手軽に作成。</h1>
           <p className="intro-description">
             前期・後期を分けて、学科と学年から共通必修を配置できます。
             クラス分け科目、CAP上限、キャンパス間移動も学期ごとに確認します。
@@ -1353,21 +1388,22 @@ export default function Home() {
               <input
                 value={studentNumber}
                 onChange={(event) => setStudentNumber(event.target.value.slice(0, 12))}
-                placeholder="例：26B12345"
+                placeholder="入学年度・学科を含む8文字"
+                autoComplete="off"
+                spellCheck={false}
               />
             </label>
           </div>
-          <a
+          <FirstYearMaterialLink
+            enabled={classGuidanceInScope}
             className="department-guidance-link"
-            href={firstYearGuidanceUrls[department]}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`${courseData.departments[department].name}を選択中。1年生向け時間割作成用資料掲載サイトを開く`}
+            href={departmentGuidance.guidanceUrl}
+            label={`${courseData.departments[department].name}の1年生向け時間割作成用資料${classGuidanceInScope ? "を開く" : "：1年生のみ利用できます"}`}
           >
             <span>1年生向け時間割作成用資料</span>
             <strong>{courseData.departments[department].name}の資料を確認</strong>
-            <small>資料掲載サイトを開く ↗</small>
-          </a>
+            <small>{classGuidanceInScope ? "時間割作成用資料掲載サイトを開く ↗" : "1年生向けのため、2～4年生では利用できません"}</small>
+          </FirstYearMaterialLink>
 
           <div className="profile-row">
             <span className="field-label">学年</span>
@@ -1389,6 +1425,22 @@ export default function Home() {
               ))}
             </div>
           </div>
+
+          <section className="class-guidance" aria-label="公式クラス分け表の確認">
+            <strong>クラス分け表を確認してください</strong>
+            <p role="status">{classLookupMessage}</p>
+            {classLookup.matches.length > 0 && (
+              <ul>{classLookup.matches.map(({ course, classLabel }) => (
+                <li key={course.id}>{course.baseTitle}：{classLabel}（{slotLabel(course)}）</li>
+              ))}</ul>
+            )}
+            <FirstYearMaterialLink enabled={classGuidanceInScope}
+              className="class-table-button" href={departmentGuidance.classTableUrl}
+              onOpen={() => setOpenedClassContext(classContext)}>
+              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+            </FirstYearMaterialLink>
+            <small>科目ごとにクラスが異なる場合があります。自動選択後も、公式表でご自身の学籍番号・科目・担当教員を照合してください。</small>
+          </section>
 
           <div className="profile-row option-grid">
             <label className="check-option">
@@ -1433,7 +1485,7 @@ export default function Home() {
                   : "1年生前期は上限緩和の対象外です。後期から選択できます。"}
               </p>
             </fieldset>
-            <button className="primary-button" onClick={autoPlaceRequired}>共通必修を自動配置</button>
+            <button className="primary-button" onClick={autoPlaceRequired}>必修を自動配置</button>
           </div>
         </div>
       </section>
@@ -1759,8 +1811,26 @@ export default function Home() {
             <span>{pendingRequired.length}</span>
           </div>
           <p className="panel-description">
-            学籍番号、英語免除、再履修などで時間が分かれる科目です。履修案内と候補の制限欄を確認して選んでください。
+            学籍番号、英語免除、再履修などでクラスが分かれる科目です。担当教員・教室も公式表と照合してください。
           </p>
+
+          <div className="class-verification">
+            <strong>{!classGuidanceInScope ? "対象学年のクラスを確認してください" : classTableConfirmed ? "公式表で確認済み（自己確認）" : "クラス分け表で要確認"}</strong>
+            <FirstYearMaterialLink enabled={classGuidanceInScope}
+              className="class-table-button" href={departmentGuidance.classTableUrl}
+              onOpen={() => setOpenedClassContext(classContext)}>
+              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+            </FirstYearMaterialLink>
+            {classGuidanceInScope && selectedRequiredChoices.length > 0 && (
+              <label>
+                <input type="checkbox" checked={classTableConfirmed}
+                  disabled={openedClassContext !== classContext && !classTableConfirmed}
+                  onChange={(event) => setConfirmedClassContext(event.target.checked ? classContext : null)} />
+                選択済みのクラスを公式表と照合しました
+              </label>
+            )}
+            <small>{classGuidanceInScope ? "リンクを開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
+          </div>
 
           {selectedRequiredChoices.length > 0 && (
             <div className="selected-required-section">
@@ -1776,9 +1846,12 @@ export default function Home() {
                       <div>
                         <strong>{required.name}</strong>
                         <span>{slotLabel(course)} · {course.campus}</span>
-                        <small>{course.instructors || "担当教員未記載"}</small>
+                        <small>{course.instructors || "担当教員未記載"}{course.room ? ` · ${course.room}` : ""}</small>
+                        {classLookup.matches.some((match) => match.course.key === required.key && match.course.id !== course.id) && (
+                          <em className="class-mismatch">公式表に基づく候補と異なる選択です。クラスを確認してください。</em>
+                        )}
                       </div>
-                      <span className="selected-badge">選択済み</span>
+                      <span className="selected-badge">{classTableConfirmed ? "自己確認済み" : "選択済み・要確認"}</span>
                     </div>
                     <div className="selected-required-actions">
                       <button
@@ -1810,7 +1883,7 @@ export default function Home() {
                               }
                             >
                               <strong>{slotLabel(candidate)}{isCurrent ? "（現在のクラス）" : ""}</strong>
-                              <span>{candidate.instructors || "担当教員未記載"}</span>
+                              <span>{candidate.instructors || "担当教員未記載"}{candidate.room ? ` · ${candidate.room}` : ""}</span>
                               <small>{candidate.campus}{candidate.restriction ? ` · ${candidate.restriction}` : ""}</small>
                             </button>
                           );
@@ -1844,7 +1917,7 @@ export default function Home() {
                             onClick={() => addCourse(course, "required") && setRequiredOpenKey(null)}
                           >
                             <strong>{slotLabel(course)}</strong>
-                            <span>{course.instructors || "担当教員未記載"}</span>
+                            <span>{course.instructors || "担当教員未記載"}{course.room ? ` · ${course.room}` : ""}</span>
                             <small>{course.campus}{course.restriction ? ` · ${course.restriction}` : ""}</small>
                           </button>
                         )) : (

@@ -1,0 +1,69 @@
+{
+  "academicYear": 2026,
+  "linksCheckedAt": "2026-09-09",
+  "departments": {
+    "機械": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/mech_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/nyfg3zm7qg3yxsxvtp9ipzsxdl9hv9vp",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "電気": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/elec_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/fqwmi5i03m9i7kaspqjy4bt2p197a2bs",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "土木": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/civil_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/r4kk4fqlmexp6hfjjkzm8hnpqjpzcded",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "建築": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/arch_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/u623v008bmxd8myrkw4m0gbw87l2luj8",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "応化": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/amc",
+      "classTableUrl": "https://nihon-u.box.com/s/nca80doq0eng73avrgj987wtscirmpjc",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "ＭＡ": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/ma",
+      "classTableUrl": "https://nihon-u.box.com/s/d9lya1oslpynf0xq0149ldnlrqermncz",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "環境": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/sust_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/1ourhh86aohcl24gnaodmzbqv1w2dqs0",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "数情": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/math_engr",
+      "classTableUrl": "https://nihon-u.box.com/s/8tnvhhvk2u6zyejmf5mq7pyb71494lk6",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    },
+    "創生": {
+      "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/cd",
+      "classTableUrl": "https://nihon-u.box.com/s/r2hal2wwnx4ia7qm7fvqkfldduy1k5qq",
+      "targetYear": 1,
+      "verifiedAt": null,
+      "rules": []
+    }
+  }
+}

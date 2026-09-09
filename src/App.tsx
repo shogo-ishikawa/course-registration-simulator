@@ -9,6 +9,8 @@ import { isCourseCompatible } from "./course-compatibility";
 import { buildCourseClassSelection } from "./course-class-selection";
 import { planRequiredAutoPlacement } from "./required-auto-placement";
 import { areCalculusRetakePair, effectiveCapLimit, enrollmentEligibilityIssue, isCapRelaxationEligible, isFallCalculusRetakeCourse, normalizeCapLimits } from "./enrollment-eligibility";
+import { buildQuarterTimetable, outputScopeLabel, quartersForOutput, type TimetableOutputScope } from "./schedule-output";
+import { drawScheduleImage, SCHEDULE_IMAGE_PRESETS } from "./schedule-image";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -16,6 +18,8 @@ type CapLimit = 20 | 22 | 24;
 type ScheduleView = "quarter" | "annual" | "intensive";
 type TextSize = "small" | "normal" | "large";
 type ScheduleExportFormat = "xlsx" | "csv";
+type ImageFormat = "png" | "jpeg";
+type ImagePreview = { url: string; filename: string; label: string };
 type BlockingError = { title: string; message: string; courseTitle: string };
 type ClassChoice = {
   course: Course;
@@ -314,7 +318,19 @@ export default function Home() {
   const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
   const [scheduleExportFormat, setScheduleExportFormat] = useState<ScheduleExportFormat>("xlsx");
   const [scheduleExporting, setScheduleExporting] = useState(false);
-  const [printSemester, setPrintSemester] = useState<Semester>("spring");
+  const [printScope, setPrintScope] = useState<TimetableOutputScope>("q1");
+  const [imageQuarter, setImageQuarter] = useState(1);
+  const [imageFormat, setImageFormat] = useState<ImageFormat>("png");
+  const [imageSize, setImageSize] = useState("pc-fhd");
+  const [imageExporting, setImageExporting] = useState(false);
+  const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null);
+
+  useEffect(() => {
+    setImageQuarter(quarter);
+    setPrintScope((scope) => scope.startsWith("q") ? `q${quarter}` as TimetableOutputScope : scope);
+  }, [quarter]);
+  useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview.url); }, [imagePreview]);
+  useEffect(() => { setImagePreview(null); }, [selectedIds, courseSemesterAssignments, department, year, imageQuarter, imageFormat, imageSize]);
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -929,7 +945,7 @@ export default function Home() {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(downloadUrl);
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
   }
 
   async function exportSchedule() {
@@ -1016,113 +1032,58 @@ export default function Home() {
     );
   }
 
-  function coursesAtQuarterSlot(targetQuarter: number, day: Day, period: number) {
-    return selectedCourses.filter(
-      (course) =>
-        course.quarters.includes(targetQuarter) &&
-        course.slots.some((slot) => slot.day === day && slot.period === period),
-    );
+  const printModels = useMemo(() => quartersForOutput(printScope).map((targetQuarter) =>
+    buildQuarterTimetable(selectedCourses, targetQuarter, courseSemesterAssignments)),
+  [printScope, selectedCourses, courseSemesterAssignments]);
+
+  function outputHasCourses(model: ReturnType<typeof buildQuarterTimetable>) {
+    return model.extraCourses.length > 0 || model.rows.some((row) => row.cells.some((cell) => cell.courses.length > 0));
   }
 
-  function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-    const lines: string[] = [];
-    let line = "";
-    for (const character of text) {
-      const next = `${line}${character}`;
-      if (line && context.measureText(next).width > maxWidth) {
-        lines.push(line);
-        line = character;
-      } else {
-        line = next;
-      }
-    }
-    if (line) lines.push(line);
-    return lines;
-  }
-
-  async function createScheduleImage() {
-    const canvas = document.createElement("canvas");
-    const width = 1600;
-    const margin = 56;
-    const labelWidth = 86;
-    const columnWidth = (width - margin * 2 - labelWidth) / days.length;
-    const rowHeight = 128;
-    const tableHeight = 58 + periods.length * rowHeight;
-    canvas.width = width;
-    canvas.height = 150 + tableHeight * 2 + 90;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas is unavailable");
-    context.fillStyle = "#f3f6fa";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#0c2340";
-    context.font = "bold 36px sans-serif";
-    context.fillText(`${courseData.meta.academicYear}年度 ${courseData.departments[department].name} ${year}年 時間割`, margin, 58);
-    context.font = "20px sans-serif";
-    context.fillStyle = "#5f6b80";
-    context.fillText("日本大学生産工学部 履修登録シミュレータ", margin, 94);
-
-    (["spring", "fall"] as Semester[]).forEach((targetSemester, semesterIndex) => {
-      const top = 126 + semesterIndex * tableHeight;
-      context.fillStyle = "#0c2340";
-      context.font = "bold 26px sans-serif";
-      context.fillText(semesterDetails[targetSemester].label, margin, top + 36);
-      days.forEach((day, dayIndex) => {
-        const x = margin + labelWidth + dayIndex * columnWidth;
-        context.fillStyle = "#2457d6";
-        context.fillRect(x, top + 50, columnWidth, 46);
-        context.fillStyle = "white";
-        context.font = "bold 21px sans-serif";
-        context.textAlign = "center";
-        context.fillText(`${day}曜日`, x + columnWidth / 2, top + 80);
-      });
-      periods.forEach((period, periodIndex) => {
-        const y = top + 96 + periodIndex * rowHeight;
-        context.fillStyle = "#e4eaf3";
-        context.fillRect(margin, y, labelWidth, rowHeight);
-        context.fillStyle = "#14213d";
-        context.font = "bold 21px sans-serif";
-        context.textAlign = "center";
-        context.fillText(`${period}限`, margin + labelWidth / 2, y + rowHeight / 2 + 8);
-        days.forEach((day, dayIndex) => {
-          const x = margin + labelWidth + dayIndex * columnWidth;
-          context.fillStyle = "white";
-          context.fillRect(x, y, columnWidth, rowHeight);
-          context.strokeStyle = "#b8c3d2";
-          context.strokeRect(x, y, columnWidth, rowHeight);
-          const courses = coursesAtExportSlot(targetSemester, day, period);
-          const courseText = courses.map((course) => `${course.title}\n${course.term}・${course.campus}`).join("\n");
-          context.fillStyle = "#14213d";
-          context.font = "bold 17px sans-serif";
-          context.textAlign = "left";
-          const lines = courseText.split("\n").flatMap((line) => wrapCanvasText(context, line, columnWidth - 18));
-          lines.slice(0, 5).forEach((line, lineIndex) => context.fillText(line, x + 9, y + 25 + lineIndex * 21));
-        });
-      });
-    });
-    return new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Image creation failed")), "image/png"),
-    );
-  }
-
-  async function shareSchedule() {
-    if (!selectedCourses.length) {
-      setNotice("共有する科目がありません。時間割に科目を追加してください。");
+  async function exportScheduleImage(action: "save" | "share") {
+    const model = buildQuarterTimetable(selectedCourses, imageQuarter, courseSemesterAssignments);
+    if (!outputHasCourses(model)) {
+      setNotice(`${imageQuarter}Qには出力する科目がありません。クウォーターの選択を確認してください。`);
       return;
     }
+    const preset = SCHEDULE_IMAGE_PRESETS.find((item) => item.id === imageSize) ?? SCHEDULE_IMAGE_PRESETS[0];
+    const mime = imageFormat === "jpeg" ? "image/jpeg" : "image/png";
+    const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年-${imageQuarter}Q-${preset.width}x${preset.height}.${imageFormat === "jpeg" ? "jpg" : "png"}`;
+    const label = `${imageQuarter}Q · ${preset.label} · ${imageFormat.toUpperCase()}`;
+    const options = { academicYear: courseData.meta.academicYear, departmentName: courseData.departments[department].name, year };
+    setImageExporting(true);
     try {
-      const image = await createScheduleImage();
-      const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年.png`;
-      const file = new File([image], filename, { type: "image/png" });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: `${courseData.meta.academicYear}年度の時間割`, files: [file] });
-        setNotice("曜日・時限表の画像をスマートフォンの共有メニューへ送りました。");
-      } else {
-        downloadBlob(image, filename);
-        setNotice("共有用の曜日・時限表を画像で保存しました。スマートフォンへ送信してお使いください。");
+      if (document.fonts) await document.fonts.ready;
+      const canvas = document.createElement("canvas");
+      canvas.width = preset.width;
+      canvas.height = preset.height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("このブラウザでは画像を作成できません。");
+      drawScheduleImage(context, model, preset.width, preset.height, options);
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+        (result) => result && result.type === mime ? resolve(result) : reject(new Error("指定した画像形式で出力できませんでした。PNG形式もお試しください。")), mime, 0.95));
+      setImagePreview({ url: URL.createObjectURL(blob), filename, label });
+      if (action === "share") {
+        const file = new File([blob], filename, { type: mime });
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ title: model.title, files: [file] });
+            setNotice(`${label}の画像を共有メニューへ送りました。`);
+            return;
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+              setNotice("共有をキャンセルしました。作成した画像は下のプレビューから保存できます。");
+              return;
+            }
+          }
+        }
       }
+      downloadBlob(blob, filename);
+      setNotice(`${label}の画像を出力しました。スマホでは下の画像を長押しして保存することもできます。`);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setNotice("共有用の時間割画像を作成できませんでした。もう一度お試しください。");
+      setNotice(error instanceof Error ? error.message : "時間割画像を作成できませんでした。もう一度お試しください。");
+    } finally {
+      setImageExporting(false);
     }
   }
 
@@ -1147,8 +1108,8 @@ export default function Home() {
   }
 
   function printSchedule() {
-    if (!selectedCourses.length) {
-      setNotice("印刷する科目がありません。時間割に科目を追加してください。");
+    if (!printModels.some(outputHasCourses)) {
+      setNotice(`${outputScopeLabel(printScope)}には印刷する科目がありません。印刷範囲を確認してください。`);
       return;
     }
     window.print();
@@ -1667,21 +1628,7 @@ export default function Home() {
                   {scheduleExporting ? "出力中…" : "時間割を出力"}
                 </button>
               </div>
-              <button className="soft-button share-schedule-button" onClick={shareSchedule}>
-                スマホへ共有
-              </button>
               <button className="soft-button email-schedule-button" onClick={emailSchedule}>メールで送信</button>
-              <div className="print-schedule-control">
-                <select
-                  value={printSemester}
-                  onChange={(event) => setPrintSemester(event.target.value as Semester)}
-                  aria-label="印刷する学期"
-                >
-                  <option value="spring">前期（1Q・2Q）</option>
-                  <option value="fall">後期（3Q・4Q）</option>
-                </select>
-                <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
-              </div>
               <button className="soft-button save-button" onClick={downloadSchedule}>
                 端末に保存
               </button>
@@ -1698,6 +1645,46 @@ export default function Home() {
               <button className="text-button" onClick={resetSchedule}>{semesterLabel}をリセット</button>
             </div>
           </div>
+
+          <section className="schedule-output-controls" aria-labelledby="schedule-output-heading">
+            <h3 id="schedule-output-heading">画像保存・印刷</h3>
+            <p>科目名・キャンパス・教室・担当教員名を載せて出力します。学籍番号は含みません。</p>
+            <div className="output-options-grid">
+              <fieldset className="image-output-options" disabled={imageExporting}>
+                <legend>壁紙用の画像</legend>
+                <div className="image-option-fields">
+                  <label><span>クウォーター</span><select aria-label="画像にするクウォーター" value={imageQuarter} onChange={(event) => setImageQuarter(Number(event.target.value))}>
+                    {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{q}Qのみ</option>)}
+                  </select></label>
+                  <label><span>画像形式</span><select aria-label="画像形式" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as ImageFormat)}>
+                    <option value="png">PNG（文字がくっきり）</option><option value="jpeg">JPEG</option>
+                  </select></label>
+                  <label className="image-size-option"><span>画像サイズ</span><select aria-label="壁紙の画像サイズ" value={imageSize} onChange={(event) => setImageSize(event.target.value)}>
+                    {SCHEDULE_IMAGE_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+                  </select></label>
+                </div>
+                <div className="output-buttons">
+                  <button className="primary-button" onClick={() => exportScheduleImage("save")}>{imageExporting ? "画像を作成中…" : "画像を保存"}</button>
+                  <button className="soft-button share-schedule-button" onClick={() => exportScheduleImage("share")}>スマホへ共有</button>
+                </div>
+              </fieldset>
+              <fieldset className="print-output-options">
+                <legend>印刷・PDF保存</legend>
+                <label><span>印刷する範囲</span><select aria-label="印刷する範囲" value={printScope} onChange={(event) => setPrintScope(event.target.value as TimetableOutputScope)}>
+                  {(["q1", "q2", "q3", "q4", "spring", "fall"] as TimetableOutputScope[]).map((scope) => <option key={scope} value={scope}>{outputScopeLabel(scope)}</option>)}
+                </select></label>
+                <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
+                <small>A4横向き。クウォーターごとにページを分けます。印刷画面からPDFとして保存することもできます。</small>
+              </fieldset>
+            </div>
+            <p className="output-detail-note">集中講義・曜日時限が未定の科目は別欄に記載します。画像の教室・担当が長い場合は、番号付きの詳細欄に全文を載せます。</p>
+            {imagePreview && <figure className="schedule-image-preview">
+              <figcaption>作成した画像：{imagePreview.label}</figcaption>
+              <img src={imagePreview.url} alt={`${imagePreview.label}の時間割。科目名・キャンパス・教室・担当教員名を掲載。`} />
+              <a className="soft-button" href={imagePreview.url} download={imagePreview.filename}>この画像をダウンロード</a>
+              <small>スマホでは画像を長押しして保存できます。壁紙に設定するときは、時間割が切れないように表示範囲を調整してください。</small>
+            </figure>}
+          </section>
 
           <p className="local-save-note">
             変更内容はこのブラウザにも自動保存されます。「端末に保存」で別の端末へ移せるJSONファイルを作成できます（学籍番号は含みません）。
@@ -2047,42 +2034,38 @@ export default function Home() {
       </section>
 
       <section className="printable-schedule" aria-hidden="true">
-        <header>
-          <div>
-            <p>NIHON UNIVERSITY · COLLEGE OF INDUSTRIAL TECHNOLOGY</p>
-            <h1>{courseData.meta.academicYear}年度 {semesterDetails[printSemester].label}時間割表</h1>
-          </div>
-          <dl>
-            <div><dt>所属</dt><dd>{courseData.departments[department].name}</dd></div>
-            <div><dt>学年</dt><dd>{year}年</dd></div>
-          </dl>
-        </header>
-        {semesterDetails[printSemester].quarters.map((targetQuarter) => (
-          <section className="print-semester" key={targetQuarter}>
-            <h2>{targetQuarter}Q</h2>
+        {printModels.map((model) => (
+          <section className="print-quarter-sheet" key={model.quarter}>
+            <header>
+              <div><p>NIHON UNIVERSITY · COLLEGE OF INDUSTRIAL TECHNOLOGY</p><h1>{courseData.meta.academicYear}年度 {model.quarter}Q 時間割表</h1></div>
+              <dl><div><dt>所属</dt><dd>{courseData.departments[department].name}</dd></div><div><dt>学年</dt><dd>{year}年</dd></div></dl>
+            </header>
             <table>
-              <thead><tr><th>時限</th>{days.map((day) => <th key={day}>{day}曜日</th>)}</tr></thead>
+              <thead><tr><th>時限</th>{model.days.map((day) => <th key={day}>{day}曜日</th>)}</tr></thead>
               <tbody>
-                {periods.map((period) => (
-                  <tr key={period}>
-                    <th>{period}限</th>
-                    {days.map((day) => (
-                      <td key={day}>
-                        {coursesAtQuarterSlot(targetQuarter, day, period).map((course) => (
-                          <div className="print-course" key={course.id}>
-                            <strong>{course.title}</strong>
-                            <small>{course.term}・{course.campus}{course.room ? `・${course.room}` : ""}</small>
-                          </div>
-                        ))}
-                      </td>
-                    ))}
+                {model.rows.map((row) => (
+                  <tr key={row.period}>
+                    <th>{row.period}限</th>
+                    {row.cells.map((cell) => <td key={cell.day}>
+                      {cell.courses.map((course) => <div className="print-course" key={course.id}>
+                        <strong>{course.title}</strong>
+                        <small>{course.campus || "キャンパス未記載"} · 教室：{course.room || "未記載"}</small>
+                        <small>担当：{course.instructors || "未記載"}</small>
+                      </div>)}
+                    </td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {model.extraCourses.length > 0 && <section className="print-extra-courses">
+              <h2>集中講義・時間外・曜日時限未定（実施日時は別途確認）</h2>
+              {model.extraCourses.map((course) => <article key={course.id}>
+                <strong>{course.title}</strong><span>{course.term || "実施時期未定"}{course.slots.length ? ` · 参考時限：${slotLabel(course)}` : ""} · {course.campus || "キャンパス未記載"} · 教室：{course.room || "未記載"} · 担当：{course.instructors || "未記載"}</span>
+              </article>)}
+            </section>}
+            <footer>出力日時：{formatUpdateTime(new Date().toISOString())}　※これは履修計画です。正式な履修登録内容はポータルで確認してください。</footer>
           </section>
         ))}
-        <footer>出力日時：{formatUpdateTime(new Date().toISOString())}　※正式な履修登録内容はポータルで確認してください。</footer>
       </section>
 
       <section className="rules-section">

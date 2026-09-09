@@ -316,7 +316,7 @@ a.class-table-button:hover { background: #fff1ce; }
 .section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .section-toolbar h2, .required-panel h2, .rules-section h2 { margin: 5px 0 0; font-size: 22px; letter-spacing: -.02em; }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-.schedule-export-control { padding: 4px; display: flex; align-items: end; gap: 6px; border: 1px solid #b9cae6; border-radius: 12px; background: #f5f8ff; }
+.schedule-export-control { padding: 4px; display: flex; flex-wrap: wrap; align-items: end; gap: 6px; border: 1px solid #b9cae6; border-radius: 12px; background: #f5f8ff; }
 .schedule-export-control label { display: grid; gap: 2px; }
 .schedule-export-control label span { padding-left: 3px; color: #64738a; font-size: 8px; font-weight: 900; }
 .schedule-export-control select { min-width: 82px; height: 34px; padding: 0 8px; border: 1px solid #c6d2e3; border-radius: 8px; color: var(--ink); background: white; }
@@ -595,7 +595,7 @@ a.class-table-button:hover { background: #fff1ce; }
   .toolbar-actions { width: 100%; justify-content: flex-start; }
   .toolbar-actions .soft-button, .toolbar-actions .text-button { flex: 1 1 calc(50% - 8px); }
   .schedule-export-control { width: 100%; }
-  .schedule-export-control label { flex: 1; }
+  .schedule-export-control label { flex: 1 1 100px; min-width: 0; }
   .schedule-export-control select { width: 100%; }
   .print-schedule-control { width: 100%; }
   .print-schedule-control select { flex: 1; }

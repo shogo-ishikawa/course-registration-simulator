@@ -1,6 +1,6 @@
 {
   "name": "nihon-cit-course-registration-simulator",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,6 +17,7 @@
     "check": "tsc --noEmit && node scripts/validate-data.mjs"
   },
   "dependencies": {
+    "pdf-lib": "1.17.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

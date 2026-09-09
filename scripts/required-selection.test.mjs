@@ -17,7 +17,7 @@ const options = {
 const select = (changes = {}) => deriveRequiredSelection({ ...options, ...changes });
 const pendingKeys = (entries) => entries.filter((entry) => entry.pending).map((entry) => entry.required.key);
 
-test("a subject already selected in spring is absent from fall pending and automatic-placement input", () => {
+test("a subject already selected in spring is absent from the fall pending list", () => {
   const springCourse = candidates.find((candidate) => candidate.id === "spring-0");
   const selectedCourses = [springCourse];
   const entries = select({ selectedCourses });

@@ -33,9 +33,10 @@ export function semesterQuarterLabel(
   return `${semester}${quarterLabel({ quarters: assignedQuarters })}`;
 }
 
-/** Use one decision for the pending list and automatic placement. Match exact
- * course keys: A and B are different subjects, even within the same lab series.
- * Existing manual selections always take precedence over a later lookup.
+/** Derive the pending and selected class lists. Match exact course keys:
+ * A and B are different subjects, even within the same lab series.
+ * A lookup alone never changes selections; explicit automatic placement may
+ * reapply the verified classes using planRequiredAutoPlacement.
  */
 export function deriveRequiredSelection<R extends RequiredDefinition, C extends SelectableCourse>({
   requiredCourses, candidates, selectedCourses, semester, quarters, assignments, deferredMatches,

@@ -181,6 +181,17 @@ a.class-table-button:hover { background: #fff1ce; }
 .class-choice-field select { width: 100%; min-width: 0; min-height: 48px; padding: 10px; border: 1px solid #8298b6; border-radius: 8px; font: inherit; background: white; }
 .class-choice-term-notice { padding: 12px; border-left: 4px solid #a96500; background: #fff3d6; line-height: 1.7; font-weight: 700; }
 .class-choice-modal > p { line-height: 1.7; }
+.auto-placement-note { margin: 12px 0 0; color: #33465d; font-size: 13px; line-height: 1.7; }
+.calculus-retake-panel { margin: 18px 0; padding: 20px; border: 2px solid #b9781b; border-radius: 14px; background: #fff8e8; color: #493411; }
+.calculus-retake-panel h2 { margin: 0 0 10px; font-size: 19px; }
+.calculus-retake-panel p { font-size: 14px; line-height: 1.7; }
+.calculus-retake-panel .check-option { background: white; align-items: flex-start; }
+.calculus-retake-panel .check-option input { flex: 0 0 20px; }
+.calculus-retake-panel .check-option strong { font-size: 14px; }
+.calculus-retake-panel .check-option small { color: #625b4d; font-size: 12px; }
+.retake-candidates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; margin-top: 14px; }
+.retake-candidates article { display: grid; gap: 8px; padding: 14px; background: white; border: 1px solid #dec69a; border-radius: 10px; font-size: 14px; }
+.retake-candidates button:disabled { opacity: .55; cursor: not-allowed; }
 .segmented { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; border-radius: 11px; background: #eef2f7; }
 .segmented button { height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-weight: 800; color: #6f7a8e; }
 .segmented button.active { background: white; color: var(--blue); box-shadow: 0 2px 8px rgba(20,33,61,.1); }

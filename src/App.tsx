@@ -7,6 +7,8 @@ import { lookupClasses, type GuidanceData } from "./class-guidance";
 import { belongsToSemester, deriveRequiredSelection, quarterLabel, semesterQuarterLabel } from "./required-selection";
 import { isCourseCompatible } from "./course-compatibility";
 import { buildCourseClassSelection } from "./course-class-selection";
+import { planRequiredAutoPlacement } from "./required-auto-placement";
+import { areCalculusRetakePair, effectiveCapLimit, enrollmentEligibilityIssue, isCapRelaxationEligible, isFallCalculusRetakeCourse, normalizeCapLimits } from "./enrollment-eligibility";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -183,10 +185,6 @@ function formatHistoryEntry(entry: UpdateHistoryEntry) {
   return `[${value("year")}年${value("month")}月${value("day")}日 ${value("hour")}:${value("minute")}] ${entry.message}`;
 }
 
-function asCapLimit(value: unknown): CapLimit {
-  return value === 22 || value === 24 ? value : 20;
-}
-
 function courseCredits(course: Course, department: string) {
   return course.creditsByDepartment[department] ?? course.defaultCredits;
 }
@@ -225,8 +223,8 @@ function intensiveTimingLabel(course: Course) {
   return "実施時期は要確認";
 }
 
-function conflictMessage(course: Course, selected: Course[]) {
-  if (selected.some((item) => item.key === course.key)) {
+function conflictMessage(course: Course, selected: Course[], calculusRetakeConfirmed = false) {
+  if (selected.some((item) => item.key === course.key && !(calculusRetakeConfirmed && areCalculusRetakePair(course, item)))) {
     return "同じ科目がすでに選択されています。";
   }
 
@@ -290,6 +288,7 @@ export default function Home() {
   const [confirmedClassContext, setConfirmedClassContext] = useState<string | null>(null);
   const [toeicExempt, setToeicExempt] = useState(false);
   const [retakePriority, setRetakePriority] = useState(false);
+  const [calculusRetakeConfirmed, setCalculusRetakeConfirmed] = useState(false);
   const [capLimits, setCapLimits] = useState<Record<Semester, CapLimit>>({
     spring: 20,
     fall: 20,
@@ -334,11 +333,17 @@ export default function Home() {
     return belongsToSemester(course, semester, semesterQuarters, courseSemesterAssignments);
   }
 
-  const requiredForProfile = useMemo(() => {
+  const requiredForYear = useMemo(() => {
     const required = courseData.departments[department].required.filter((course) => course.year === year);
     if (!toeicExempt) return required;
     return required.filter((course) => !["英語I", "英語II"].includes(course.key));
   }, [department, toeicExempt, year]);
+  // Fall Calculus I is a retake, so it is never part of automatic placement.
+  const requiredForProfile = useMemo(() => requiredForYear.filter((course) =>
+    !(semester === "fall" && course.key === "微分積分学I")), [requiredForYear, semester]);
+  function isCurriculumRequired(course: Course) {
+    return courseData.departments[department].required.some((required) => required.key === course.key && required.year === course.year);
+  }
 
   const compatibleCourses = useMemo(
     () =>
@@ -362,6 +367,7 @@ export default function Home() {
   ]);
   const classGuidanceInScope = classLookup.status !== "out-of-scope";
   useEffect(() => { setClassChoice(null); }, [department, year, semester, studentNumber]);
+  useEffect(() => { setCalculusRetakeConfirmed(false); }, [department, year, studentNumber]);
   const classTableConfirmed = classGuidanceInScope && confirmedClassContext === classContext;
   useEffect(() => {
     // Returning to an older selection must not restore an earlier confirmation.
@@ -428,15 +434,15 @@ export default function Home() {
     source: "required" | "elective",
     assignedSemester?: Semester,
   ) {
-    const conflict = conflictMessage(course, selectedCourses);
+    const eligibilityIssue = enrollmentEligibilityIssue(course, calculusRetakeConfirmed);
+    if (eligibilityIssue) { showBlockingIssue(course, eligibilityIssue); return false; }
+    const conflict = conflictMessage(course, selectedCourses, calculusRetakeConfirmed);
     if (conflict) {
       showBlockingIssue(course, conflict);
       return false;
     }
     // A manual override of the official semester is still a required subject.
-    const effectiveSource = requiredForProfile.some((required) => required.key === course.key)
-      ? "required"
-      : source;
+    const effectiveSource = isCurriculumRequired(course) ? "required" : "elective";
     setSelectedIds((current) => [...current, course.id]);
     setSelectionSources((current) => ({ ...current, [course.id]: effectiveSource }));
     if (assignedSemester) {
@@ -470,8 +476,10 @@ export default function Home() {
 
   function replaceSelectedCourse(currentCourse: Course, nextCourse: Course) {
     if (currentCourse.id === nextCourse.id) return false;
+    const eligibilityIssue = enrollmentEligibilityIssue(nextCourse, calculusRetakeConfirmed);
+    if (eligibilityIssue) { showBlockingIssue(nextCourse, eligibilityIssue); return false; }
     const otherCourses = selectedCourses.filter((course) => course.id !== currentCourse.id);
-    const conflict = conflictMessage(nextCourse, otherCourses);
+    const conflict = conflictMessage(nextCourse, otherCourses, calculusRetakeConfirmed);
     if (conflict) {
       showBlockingIssue(nextCourse, conflict);
       return false;
@@ -482,7 +490,7 @@ export default function Home() {
     setSelectionSources((current) => {
       const next = { ...current };
       delete next[currentCourse.id];
-      next[nextCourse.id] = current[currentCourse.id] ?? (requiredForProfile.some((required) => required.key === nextCourse.key) ? "required" : "elective");
+      next[nextCourse.id] = isCurriculumRequired(nextCourse) ? "required" : "elective";
       return next;
     });
     setCourseSemesterAssignments((current) => {
@@ -504,14 +512,18 @@ export default function Home() {
     // Annual/intensive courses keep their dedicated semester assignment flow.
     // The official class tables describe regular quarter-based classes.
     const special = isAnnualCourse(course) || isIntensiveCourse(course);
+    const retake = isFallCalculusRetakeCourse(course);
     return buildCourseClassSelection({ course,
-      candidates: special ? [course] : compatibleCourses.filter((candidate) => !isAnnualCourse(candidate) && !isIntensiveCourse(candidate)),
-      lookup: classLookup, coveredCourseKeys: special ? [] : departmentGuidance.coveredCourseKeys ?? [] });
+      candidates: special ? [course] : compatibleCourses.filter((candidate) => !isAnnualCourse(candidate) && !isIntensiveCourse(candidate) && isFallCalculusRetakeCourse(candidate) === retake),
+      lookup: retake ? { ...classLookup, matches: [], deferredMatches: [] } : classLookup,
+      coveredCourseKeys: special || retake ? [] : departmentGuidance.coveredCourseKeys ?? [] });
   }
 
   // Opening the class chooser does not add a subject. Its initial selection is
   // the verified class; editing starts with the student's existing choice.
   function chooseCourseClass(course: Course, source: "required" | "elective", assignedSemester?: Semester, replacingId?: string) {
+    const eligibilityIssue = enrollmentEligibilityIssue(course, calculusRetakeConfirmed);
+    if (eligibilityIssue) { showBlockingIssue(course, eligibilityIssue); return false; }
     const selection = classSelectionFor(course);
     if (!selection.isClassDivided && !replacingId) return addCourse(course, source, assignedSemester);
     setClassChoice({ course, source, assignedSemester, replacingId,
@@ -544,30 +556,49 @@ export default function Home() {
   }
 
   function autoPlaceRequired() {
-    // Fill gaps only: preserve electives and every manually selected class.
-    const automaticallyPlaced: Course[] = [];
-    const skipped: string[] = [];
-    let classCount = 0;
-    const nextSources = { ...selectionSources };
-    for (const { required, candidates } of pendingRequiredEntries) {
-      if ([...selectedCourses, ...automaticallyPlaced].some((course) => course.key === required.key)) continue;
-      const mapped = classLookup.matches.find((match) => match.course.key === required.key);
-      if (classLookup.blockedKeys.includes(required.key)) { skipped.push(required.name); continue; }
-      const course = mapped?.course ?? (candidates.length === 1 ? candidates[0] : null);
-      if (!course) { skipped.push(required.name); continue; }
-      const conflict = conflictMessage(course, [...selectedCourses, ...automaticallyPlaced]);
-      if (conflict) { skipped.push(`${required.name}（${conflict}）`); continue; }
-      automaticallyPlaced.push(course);
-      nextSources[course.id] = "required";
-      if (mapped) classCount++;
+    // Old saved plans may have mislabeled electives as required. Remove only
+    // those legacy required-tagged electives; explicit elective choices stay.
+    const legacyElectives = selectedCourses.filter((course) =>
+      selectionSources[course.id] === "required" && !isCurriculumRequired(course));
+    const legacyIds = new Set(legacyElectives.map((course) => course.id));
+    const result = planRequiredAutoPlacement({
+      requiredCourses: requiredForYear,
+      candidates: compatibleCourses,
+      selectedCourses: selectedCourses.filter((course) => !legacyIds.has(course.id)),
+      quarters: semesterQuarters,
+      lookup: classLookup,
+      coveredCourseKeys: departmentGuidance.coveredCourseKeys ?? [],
+      isAutoEligible: (course) => !isFallCalculusRetakeCourse(course),
+      conflictMessage: (course, selected) => conflictMessage(course, selected, calculusRetakeConfirmed),
+    });
+    if (result.conflicts.length) {
+      const message = "必修クラスの更新先に競合があるため、今回の自動配置は行っていません。元の時間割は保持しています。\n" +
+        result.conflicts.map(({ course, message }) => `「${course.baseTitle}」${semesterQuarterLabel(course)}・${slotLabel(course)}：${message}`).join("\n");
+      setBlockingError({ title: "必修クラスを更新できません", courseTitle: result.conflicts.map(({ course }) => course.baseTitle).join("、"), message });
+      setLastBlockedIssue(message);
+      setNotice(null);
+      return;
     }
-    setSelectedIds((current) => [...current, ...automaticallyPlaced.map((course) => course.id)]);
-    setSelectionSources(nextSources);
+    const ids = new Set(result.selectedCourses.map((course) => course.id));
+    const reconfiguredIds = new Set([
+      ...result.replacements.flatMap(({ previous, course }) => [...previous.map((item) => item.id), course.id]),
+      ...result.added.filter((course) => !isAnnualCourse(course) && !isIntensiveCourse(course)).map((course) => course.id),
+    ]);
+    setSelectedIds([...ids]);
+    setSelectionSources(Object.fromEntries(result.selectedCourses.map((course) =>
+      [course.id, isCurriculumRequired(course) ? "required" : "elective"])));
+    setCourseSemesterAssignments(Object.fromEntries(Object.entries(courseSemesterAssignments)
+      .filter(([id]) => ids.has(id) && !reconfiguredIds.has(id))));
+    setOpenedClassContext(null);
     setConfirmedClassContext(null);
+    setLastBlockedIssue(null);
     setNotice(
-      `${semesterLabel}の必修${automaticallyPlaced.length}科目を追加しました。既存の選択は保持しています。` +
-      (classCount ? `うち${classCount}科目は学籍番号からクラスを選択しました。必ず公式表で確認してください。` : "") +
-      (skipped.length ? ` 手動確認が必要：${skipped.join("、")}。右側の候補とクラス分け表を確認してください。` : ""),
+      `${semesterLabel}の必修${result.added.length}科目を追加し、配置済みの必修${result.replacements.length}科目のクラスを更新しました。選択科目は自動追加しません。` +
+      (result.replacements.length ? " 更新内容：" + result.replacements.map(({ course }) =>
+        `${course.baseTitle} → ${semesterQuarterLabel(course)}・${slotLabel(course)}（${course.instructors}）`).join("、") + "。" : "") +
+      (legacyElectives.length ? ` 過去の保存内容で必修扱いになっていた選択科目を外しました：${legacyElectives.map((course) => course.baseTitle).join("、")}。履修する場合は選択科目として追加し直してください。` : "") +
+      (result.classCount ? "学籍番号から選択したクラスを、必ず公式表で確認してください。" : "") +
+      (result.skipped.length ? ` 手動確認が必要：${result.skipped.map(({ required, reason }) => `${required.name}（${reason}）`).join("、")}。` : ""),
     );
   }
 
@@ -614,10 +645,7 @@ export default function Home() {
           setStudentNumber(state.studentNumber ?? "");
           setToeicExempt(Boolean(state.toeicExempt));
           setRetakePriority(Boolean(state.retakePriority));
-          setCapLimits({
-            spring: asCapLimit(state.capLimits?.spring),
-            fall: asCapLimit(state.capLimits?.fall),
-          });
+          setCapLimits(normalizeCapLimits(state.year ?? 1, state.capLimits));
           const validIds = (state.selectedIds ?? []).filter((id) => courseById.has(id));
           setSelectedIds(validIds);
           setSelectionSources(state.selectionSources ?? {});
@@ -707,9 +735,12 @@ export default function Home() {
       sum + (isCapExempt(course) ? 0 : (courseCredits(course, department) ?? 0)),
     0,
   );
-  const capRelaxationEligible = year >= 2 || semester === "fall";
-  const capLimit = capRelaxationEligible ? capLimits[semester] : 20;
+  const capRelaxationEligible = isCapRelaxationEligible(year);
+  const capLimit = effectiveCapLimit(year, capLimits[semester]);
   const capExceeded = capCredits > capLimit;
+  const calculusRetakeCandidates = compatibleCourses.filter(isFallCalculusRetakeCourse);
+  const selectedCalculusRetakes = selectedCourses.filter(isFallCalculusRetakeCourse);
+  const unconfirmedRetakes = selectedCalculusRetakes.filter((course) => enrollmentEligibilityIssue(course, calculusRetakeConfirmed));
 
   const detectedScheduleIssues = (() => {
     const issues: string[] = [];
@@ -745,7 +776,7 @@ export default function Home() {
   })();
 
   const automaticErrorCount =
-    (capExceeded ? 1 : 0) + detectedScheduleIssues.length + (lastBlockedIssue ? 1 : 0);
+    (capExceeded ? 1 : 0) + detectedScheduleIssues.length + unconfirmedRetakes.length + (lastBlockedIssue ? 1 : 0);
   const automaticWarningCount = unknownCreditCourses.length;
 
   const slotCandidates = useMemo(() => {
@@ -881,7 +912,7 @@ export default function Home() {
         キャンパス: course.campus,
         教室: course.room,
         単位数: courseCredits(course, department) ?? "要確認",
-        区分: selectionSources[course.id] === "required" ? "必修" : "選択",
+        区分: isCurriculumRequired(course) ? "必修" : "選択",
       }))
       .sort((a, b) =>
         a.学期.localeCompare(b.学期, "ja") ||
@@ -1153,10 +1184,8 @@ export default function Home() {
       setQuarter(nextQuarter);
       setToeicExempt(Boolean(state.toeicExempt));
       setRetakePriority(Boolean(state.retakePriority));
-      setCapLimits({
-        spring: asCapLimit(state.capLimits?.spring),
-        fall: asCapLimit(state.capLimits?.fall),
-      });
+      setCapLimits(normalizeCapLimits(nextYear, state.capLimits));
+      setCalculusRetakeConfirmed(false);
       if (["quarter", "annual", "intensive"].includes(state.scheduleView ?? "")) {
         setScheduleView(state.scheduleView ?? "quarter");
       } else {
@@ -1432,12 +1461,12 @@ export default function Home() {
             )}
             {classLookup.matches.length > 0 && (
               <ul>{classLookup.matches.map(({ course, classLabel }) => (
-                <li key={course.id}>{course.baseTitle}：{classLabel}（{quarterLabel(course)} · {slotLabel(course)}）</li>
+                <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：{classLabel}（{quarterLabel(course)} · {slotLabel(course)}）</li>
               ))}</ul>
             )}
             {classLookup.deferredMatches.length > 0 && (
               <ul className="official-other-semester">{classLookup.deferredMatches.map(({ course, classLabel }) => (
-                <li key={course.id}>{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
+                <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
               ))}</ul>
             )}
             <FirstYearMaterialLink enabled={classGuidanceInScope}
@@ -1488,11 +1517,12 @@ export default function Home() {
               <p className="cap-choice-note">
                 {capRelaxationEligible
                   ? `${semesterLabel}の上限を選択してください。前期・後期で設定は別々に保存されます。`
-                  : "1年生前期は上限緩和の対象外です。後期から選択できます。"}
+                  : "1年生は前期・後期とも20単位です。上限緩和は2年生以上が対象です。"}
               </p>
             </fieldset>
             <button className="primary-button" onClick={autoPlaceRequired}>必修を自動配置</button>
           </div>
+          <p className="auto-placement-note">自動配置するのは所属学科・学年の必修だけです。選択科目はご自身で追加してください。学籍番号を変更して押し直すと、配置済みの必修も指定クラス・開講Qへ更新します（別学期の配置も対象）。</p>
         </div>
       </section>
 
@@ -1548,6 +1578,12 @@ export default function Home() {
           </span>
         </div>
         <div className="auto-check-list">
+          {unconfirmedRetakes.map((course) => (
+            <article className="check-result error" key={`retake-${course.id}`}>
+              <span>再履修</span><div><strong>{semesterQuarterLabel(course)}の{course.baseTitle}は再履修対象者のみです</strong><p>前期に履修して単位を取得できなかったことを、下の「微分積分学Iの後期再履修」で確認してください。対象でなければ履修案から削除してください。</p></div>
+              <button onClick={() => removeCourse(course)}>履修案から削除</button>
+            </article>
+          ))}
           {capExceeded && (
             <article className="check-result error">
               <span>CAP</span>
@@ -1584,6 +1620,28 @@ export default function Home() {
           <p>このシミュレータには過去の履修・単位取得履歴がないため、自動では判定できません。必ずポータルの成績情報と照合してください。</p>
         </div>
       </aside>
+
+      {(semester === "fall" || selectedCalculusRetakes.length > 0) && calculusRetakeCandidates.length > 0 && (
+        <section className="calculus-retake-panel" aria-labelledby="calculus-retake-heading">
+          <h2 id="calculus-retake-heading">微分積分学Iの後期再履修</h2>
+          <p><strong>後期の微分積分学Iは、前期に履修して単位を取得できなかった学生のみが対象です。</strong>初めて履修する場合や単位取得済みの場合は選択しないでください。必修の自動配置には含めません。</p>
+          <label className="check-option">
+            <input type="checkbox" checked={calculusRetakeConfirmed} onChange={(event) => setCalculusRetakeConfirmed(event.target.checked)} />
+            <span><strong>前期に微分積分学Iを履修し、単位を取得できなかったことを成績情報で確認しました</strong><small>学籍番号・学科・学年の変更、読み込み、ページ再表示後は再確認が必要です。</small></span>
+          </label>
+          <div className="retake-candidates">
+            {calculusRetakeCandidates.map((course) => {
+              const selected = selectedIds.includes(course.id);
+              const current = selectedCalculusRetakes[0];
+              return <article key={course.id}>
+                <strong>{semesterQuarterLabel(course)} · {slotLabel(course)}</strong><span>{course.instructors} · {course.campus} · {course.id}</span>
+                {selected ? <button className="soft-button" onClick={() => removeCourse(course)}>再履修を削除</button> : <button className="soft-button" disabled={!calculusRetakeConfirmed} onClick={() => current ? replaceSelectedCourse(current, course) : addCourse(course, "required")}>{current ? "この再履修クラスに変更" : "再履修を追加"}</button>}
+              </article>;
+            })}
+          </div>
+          <p>前期の履修計画は残したまま、後期の再履修を追加できます。実際の成績や履修資格はこのシミュレータでは取得していません。</p>
+        </section>
+      )}
 
       <section className="workspace">
         <div className="schedule-panel">
@@ -1717,7 +1775,7 @@ export default function Home() {
                             </button>
                           );
                         }
-                        const source = selectionSources[course.id];
+                        const source = isCurriculumRequired(course) ? "required" : "elective";
                         const removable = source !== "required" || requiredEditMode;
                         return (
                           <article
@@ -2034,7 +2092,7 @@ export default function Home() {
         </div>
         <div className="rules-grid">
           <article><span>01</span><h3>セット科目</h3><p>火2・金3など、同じ講義コードの複数コマを一括で登録します。</p></article>
-          <article><span>02</span><h3>学期別の履修上限</h3><p>前期・後期ごとにCAP上限を20・22・24単位から設定します。1年生前期は20単位固定です。</p></article>
+          <article><span>02</span><h3>学期別の履修上限</h3><p>1年生は前期・後期とも20単位固定です。2年生以上は、各学期の緩和条件に応じて20・22・24単位から設定します。</p></article>
           <article><span>03</span><h3>キャンパス移動</h3><p>連続するコマが実籾と津田沼に分かれる組み合わせを登録前に警告します。</p></article>
           <article><span>04</span><h3>時間割重複</h3><p>同じ曜日・時限に複数の科目を置こうとした場合は追加を止めます。</p></article>
         </div>
@@ -2065,7 +2123,7 @@ export default function Home() {
               <span>講義名・教員名で絞り込み</span>
               <input value={courseSearch} onChange={(e) => setCourseSearch(e.target.value)} placeholder="検索" autoFocus />
             </label>
-            <div className="candidate-count">履修可能な候補 {slotCandidates.length}件（下級年次科目を含む）</div>
+            <div className="candidate-count">時間割の候補 {slotCandidates.length}件（履修条件の確認が必要です）</div>
             <div className="drawer-list">
               {slotCandidates.map((course) => (
                 <article key={course.id} className={`drawer-course campus-${course.campus}`}>
@@ -2083,6 +2141,7 @@ export default function Home() {
                       <div><dt>単位</dt><dd>{courseCredits(course, department) ?? "要確認"}</dd></div>
                     </dl>
                     {course.restriction && <small className="restriction">履修制限：{course.restriction}</small>}
+                    {isFallCalculusRetakeCourse(course) && <p className="class-mismatch">前期に微分積分学Iを履修して単位を取得できなかった学生のみ。再履修対象の確認が必要です。</p>}
                   </div>
                   <div className="drawer-course-actions">
                     <button className="soft-button" onClick={() => setDetailCourse(course)}>詳細</button>
@@ -2102,9 +2161,9 @@ export default function Home() {
             <span className="blocking-error-icon" aria-hidden="true">!</span>
             <p className="eyebrow">REGISTRATION ERROR</p>
             <h2 id="blocking-error-title">{blockingError.title}</h2>
-            <p className="blocked-course-name">追加しようとした科目：{blockingError.courseTitle}</p>
+            <p className="blocked-course-name">対象科目：{blockingError.courseTitle}</p>
             <div className="blocking-error-message">{blockingError.message}</div>
-            <p className="blocking-error-help">この科目は時間割に追加されていません。表示された曜日・時限とキャンパスを確認し、別の科目またはクラスを選んでください。</p>
+            <p className="blocking-error-help">今回の追加・変更は反映されていません。表示された履修条件・曜日時限・キャンパスを確認してから、もう一度操作してください。</p>
             <button className="primary-button" autoFocus onClick={() => setBlockingError(null)}>内容を確認しました</button>
           </section>
         </div>
@@ -2128,6 +2187,7 @@ export default function Home() {
             </div>
             {detailCourse.slots.length > 1 && <div className="set-callout"><strong>セット開講科目</strong><p>{slotLabel(detailCourse)}をまとめて登録します。</p></div>}
             {detailCourse.restriction && <div className="restriction-block"><strong>履修制限・対象</strong><p>{detailCourse.restriction}</p></div>}
+            {isFallCalculusRetakeCourse(detailCourse) && <div className="restriction-block"><strong>後期は再履修対象者のみ</strong><p>前期に微分積分学Iを履修して単位を取得できなかった学生のみ選択できます。画面の「微分積分学Iの後期再履修」で対象であることを確認してください。</p></div>}
             <div className="syllabus-search-note">
               <span>シラバスで検索する講義名</span>
               <strong>{detailCourse.title}</strong>

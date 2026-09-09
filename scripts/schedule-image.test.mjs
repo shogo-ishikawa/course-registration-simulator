@@ -108,3 +108,58 @@ test("unreadable oversized content fails explicitly rather than producing a clip
   assert.equal(rectangles.length, 0, "preflight fails before rendering a partial image");
   assert.throws(() => drawScheduleImage(ctx, model, 0, 1080), /画像のサイズ/);
 });
+
+test("hiding supplementary information keeps header and complete weekly cells while expanding the grid in every preset", () => {
+  const model = buildQuarterTimetable([
+    course(),
+    course({ id: "intensive", title: "集中講義テスト", term: "後期集中", instructors: "集中 担当", room: "37-402", slots: [] }),
+  ], 3);
+  const original = structuredClone(model);
+  for (const preset of SCHEDULE_IMAGE_PRESETS) {
+    const options = { academicYear: 2026, departmentName: "電気電子工学科", year: 1 };
+    const full = drawingContext();
+    const minimal = drawingContext();
+    drawScheduleImage(full.ctx, model, preset.width, preset.height, options);
+    drawScheduleImage(minimal.ctx, model, preset.width, preset.height, { ...options, showSupplementaryInfo: false });
+    const text = compact(minimal.drawn.map((draw) => draw.text).join(""));
+    for (const field of ["MY TIMETABLE", "3Q 時間割", "2026年度", "電気電子工学科", "情報リテラシー", "実籾", "教室：52-304", "担当：石川 将吾"]) {
+      assert.ok(text.includes(compact(field)), `${preset.id}: ${field}`);
+    }
+    for (const field of ["集中講義", "集中担当", "37-402", "詳細", "参考時限", "ポータル", "履修計画用", "［1］"]) {
+      assert.ok(!text.includes(field), `${preset.id}: excludes ${field}`);
+    }
+    const gridBottom = ({ rectangles }) => Math.max(...rectangles.filter(({ color }) => color === "#ffffff").map(({ args: [, y, , height] }) => y + height));
+    const margin = preset.height > preset.width ? 34 * preset.width / 1080 : 48 * preset.width / 1920;
+    assert.ok(gridBottom(minimal) > gridBottom(full), `${preset.id}: table reclaims supplementary space`);
+    assert.ok(Math.abs(gridBottom(minimal) - (preset.height - margin)) < 0.001, `${preset.id}: only a normal bottom margin remains`);
+    assert.ok(minimal.drawn.every(({ y }) => y < gridBottom(minimal)), `${preset.id}: no text is drawn below the table`);
+  }
+  assert.deepEqual(model, original, "hiding output information does not alter the timetable");
+});
+
+test("supplementary information defaults to visible and hiding it does not validate excluded intensive metadata", () => {
+  const model = buildQuarterTimetable([course(), course({ id: "extra", title: "集中講義テスト", term: "後期集中", slots: [] })], 3);
+  const defaultOutput = drawingContext();
+  const explicitOutput = drawingContext();
+  drawScheduleImage(defaultOutput.ctx, model, 1920, 1080);
+  drawScheduleImage(explicitOutput.ctx, model, 1920, 1080, { showSupplementaryInfo: true });
+  assert.deepEqual(defaultOutput.drawn, explicitOutput.drawn);
+  assert.deepEqual(defaultOutput.rectangles, explicitOutput.rectangles);
+  assert.ok(defaultOutput.drawn.some(({ text }) => text.includes("集中講義テスト")));
+  assert.ok(defaultOutput.drawn.some(({ text }) => text.includes("ポータル")));
+
+  const hugeExtra = buildQuarterTimetable([course(), course({ id: "huge-extra", term: "後期集中", slots: [], instructors: "非常に長い担当教員情報".repeat(1000) })], 3);
+  const minimal = drawingContext();
+  assert.doesNotThrow(() => drawScheduleImage(minimal.ctx, hugeExtra, 1920, 1080, { showSupplementaryInfo: false }));
+  assert.ok(!minimal.drawn.some(({ text }) => text.includes("非常に長い")));
+});
+
+test("hidden details never create dangling references or truncate overflowing weekly metadata", () => {
+  const model = buildQuarterTimetable([course({ instructors: "鈴木 康介，安藤 努，沖田 浩平，風間 恵介，久保田 正広，栗谷川 幸代，坂田 憲泰，菅沼 祐介，染宮 聖人，野村 浩司，平林 明子，平山 紀夫，前田 将克，松本 真和，丸茂 喜高，栁澤 一機", room: "08103 08112 08113 08213 08214 08215 08216 08217 08218 08219 08220 08221 08222" })], 3);
+  for (const preset of SCHEDULE_IMAGE_PRESETS) {
+    const { ctx, drawn, rectangles } = drawingContext();
+    assert.throws(() => drawScheduleImage(ctx, model, preset.width, preset.height, { showSupplementaryInfo: false }), /「時間割の下の情報を表示する」を有効に/);
+    assert.equal(drawn.length, 0, `${preset.id}: no partial text or references`);
+    assert.equal(rectangles.length, 0, `${preset.id}: fail before partial image rendering`);
+  }
+});

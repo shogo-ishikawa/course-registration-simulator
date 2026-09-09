@@ -24,7 +24,7 @@ export async function createSchedulePdf(
   options: PdfOptions = {},
 ): Promise<Uint8Array> {
   if (!models.length) {
-    throw new Error("PDFに出力する学期・クウォーターを選択してください。");
+    throw new Error("PDFに出力する学期・クォーターを選択してください。");
   }
 
   const pdf = await PDFDocument.create();

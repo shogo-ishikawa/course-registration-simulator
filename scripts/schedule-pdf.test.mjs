@@ -73,7 +73,7 @@ test("blank selected quarter remains a valid timetable page, but no scope is rej
   await assert.rejects(createSchedulePdf([], async () => {
     called = true;
     return png;
-  }), /PDFに出力する学期・クウォーター/);
+  }), /PDFに出力する学期・クォーター/);
   assert.equal(called, false);
 });
 

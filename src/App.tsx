@@ -322,6 +322,7 @@ export default function Home() {
   const [imageQuarter, setImageQuarter] = useState(1);
   const [imageFormat, setImageFormat] = useState<ImageFormat>("png");
   const [imageSize, setImageSize] = useState("pc-fhd");
+  const [imageShowSupplementaryInfo, setImageShowSupplementaryInfo] = useState(true);
   const [imageExporting, setImageExporting] = useState(false);
   const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null);
 
@@ -330,7 +331,7 @@ export default function Home() {
     setPrintScope((scope) => scope.startsWith("q") ? `q${quarter}` as TimetableOutputScope : scope);
   }, [quarter]);
   useEffect(() => () => { if (imagePreview) URL.revokeObjectURL(imagePreview.url); }, [imagePreview]);
-  useEffect(() => { setImagePreview(null); }, [selectedIds, courseSemesterAssignments, department, year, imageQuarter, imageFormat, imageSize]);
+  useEffect(() => { setImagePreview(null); }, [selectedIds, courseSemesterAssignments, department, year, imageQuarter, imageFormat, imageSize, imageShowSupplementaryInfo]);
 
   const courseById = useMemo(
     () => new Map(courseData.courses.map((course) => [course.id, course])),
@@ -1070,14 +1071,18 @@ export default function Home() {
   async function exportScheduleImage(action: "save" | "share") {
     const model = buildQuarterTimetable(selectedCourses, imageQuarter, courseSemesterAssignments);
     if (!outputHasCourses(model)) {
-      setNotice(`${imageQuarter}Qには出力する科目がありません。クウォーターの選択を確認してください。`);
+      setNotice(`${imageQuarter}Qには出力する科目がありません。クォーターの選択を確認してください。`);
+      return;
+    }
+    if (!imageShowSupplementaryInfo && !model.rows.some((row) => row.cells.some((cell) => cell.courses.length > 0))) {
+      setNotice(`${imageQuarter}Qには時間割表に表示する科目がありません。「時間割の下の情報を表示する」をオンにすると、集中講義などを出力できます。`);
       return;
     }
     const preset = SCHEDULE_IMAGE_PRESETS.find((item) => item.id === imageSize) ?? SCHEDULE_IMAGE_PRESETS[0];
     const mime = imageFormat === "jpeg" ? "image/jpeg" : "image/png";
-    const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年-${imageQuarter}Q-${preset.width}x${preset.height}.${imageFormat === "jpeg" ? "jpg" : "png"}`;
-    const label = `${imageQuarter}Q · ${preset.label} · ${imageFormat.toUpperCase()}`;
-    const options = { academicYear: courseData.meta.academicYear, departmentName: courseData.departments[department].name, year };
+    const filename = `時間割-${courseData.meta.academicYear}-${courseData.departments[department].name}-${year}年-${imageQuarter}Q${imageShowSupplementaryInfo ? "" : "-時間割のみ"}-${preset.width}x${preset.height}.${imageFormat === "jpeg" ? "jpg" : "png"}`;
+    const label = `${imageQuarter}Q · ${preset.label} · ${imageFormat.toUpperCase()} · ${imageShowSupplementaryInfo ? "下部の情報あり" : "ヘッダー・時間割のみ"}`;
+    const options = { academicYear: courseData.meta.academicYear, departmentName: courseData.departments[department].name, year, showSupplementaryInfo: imageShowSupplementaryInfo };
     setImageExporting(true);
     try {
       if (document.fonts) await document.fonts.ready;
@@ -1715,7 +1720,7 @@ export default function Home() {
                 <fieldset className="image-output-options" disabled={imageExporting}>
                   <legend>壁紙用の画像</legend>
                   <div className="image-option-fields">
-                    <label><span>クウォーター</span><select aria-label="画像にするクウォーター" value={imageQuarter} onChange={(event) => setImageQuarter(Number(event.target.value))}>
+                    <label><span>クォーター</span><select aria-label="画像にするクォーター" value={imageQuarter} onChange={(event) => setImageQuarter(Number(event.target.value))}>
                       {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{q}Qのみ</option>)}
                     </select></label>
                     <label><span>画像形式</span><select aria-label="画像形式" value={imageFormat} onChange={(event) => setImageFormat(event.target.value as ImageFormat)}>
@@ -1725,6 +1730,10 @@ export default function Home() {
                       {SCHEDULE_IMAGE_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
                     </select></label>
                   </div>
+                  <label className="image-supplementary-option">
+                    <input type="checkbox" checked={imageShowSupplementaryInfo} onChange={(event) => setImageShowSupplementaryInfo(event.target.checked)} />
+                    <span><strong>時間割の下の情報を表示する</strong><small>集中講義・授業の詳細・注意書き。オフにするとヘッダーと時間割表だけになります。</small></span>
+                  </label>
                   <div className="output-buttons">
                     <button className="primary-button" onClick={() => exportScheduleImage("save")}>{imageExporting ? "画像を作成中…" : "画像を保存"}</button>
                     <button className="soft-button share-schedule-button" onClick={() => exportScheduleImage("share")}>スマホへ共有</button>
@@ -1736,10 +1745,10 @@ export default function Home() {
                     {(["q1", "q2", "q3", "q4", "spring", "fall"] as TimetableOutputScope[]).map((scope) => <option key={scope} value={scope}>{outputScopeLabel(scope)}</option>)}
                   </select></label>
                   <button className="soft-button print-schedule-button" onClick={printSchedule}>印刷</button>
-                  <small>A4横向き。クウォーターごとにページを分けます。印刷画面からPDFとして保存することもできます。</small>
+                  <small>A4横向き。クォーターごとにページを分けます。印刷画面からPDFとして保存することもできます。</small>
                 </fieldset>
               </div>
-              <p className="output-detail-note">集中講義・曜日時限が未定の科目は別欄に記載します。画像の教室・担当が長い場合は、番号付きの詳細欄に全文を載せます。</p>
+              <p className="output-detail-note">下部の情報を表示する画像と印刷・PDFには、集中講義などを別欄に記載します。画像の教室・担当が長い場合は、番号付きの詳細欄に全文を載せます。</p>
               {imagePreview && <figure className="schedule-image-preview">
                 <figcaption>作成した画像：{imagePreview.label}</figcaption>
                 <img src={imagePreview.url} alt={`${imagePreview.label}の時間割。科目名・キャンパス・教室・担当教員名を掲載。`} />

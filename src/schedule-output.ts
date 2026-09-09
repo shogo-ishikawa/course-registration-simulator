@@ -33,7 +33,7 @@ const scopeQuarters: Record<TimetableOutputScope, number[]> = {
 
 export function quartersForOutput(scope: TimetableOutputScope): number[] {
   const quarters = scopeQuarters[scope];
-  if (!quarters) throw new Error("出力する学期・クウォーターを選択してください。");
+  if (!quarters) throw new Error("出力する学期・クォーターを選択してください。");
   return [...quarters];
 }
 
@@ -79,7 +79,7 @@ export function buildQuarterTimetable<C extends OutputCourse>(
   assignments: Record<string, OutputSemester> = {},
 ): QuarterTimetable<C> {
   if (!Number.isInteger(targetQuarter) || targetQuarter < 1 || targetQuarter > 4) {
-    throw new Error("出力するクウォーターは1Q〜4Qから選択してください。");
+    throw new Error("出力するクォーターは1Q〜4Qから選択してください。");
   }
   const unique = selectedCourses.filter((course, index, courses) =>
     courses.findIndex((candidate) => candidate.id === course.id) === index);

@@ -3,7 +3,7 @@ import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
 import updateHistoryJson from "./data/update-history.json";
 import guidanceJson from "./data/department-guidance.json";
-import { lookupClasses, type GuidanceData } from "./class-guidance";
+import { lookupClasses, type DepartmentGuidance, type GuidanceData } from "./class-guidance";
 import { belongsToSemester, deriveRequiredSelection, quarterLabel, semesterQuarterLabel } from "./required-selection";
 import { isCourseCompatible } from "./course-compatibility";
 import { buildCourseClassSelection } from "./course-class-selection";
@@ -278,6 +278,14 @@ function FirstYearMaterialLink({ enabled, href, className, children, onOpen, lab
   ) : (
     <button type="button" className={className} disabled aria-label={label}>{children}</button>
   );
+}
+
+function CourseGuidanceNotes({ info, courseKey, enabled }: {
+  info: DepartmentGuidance; courseKey?: string; enabled: boolean;
+}) {
+  if (!enabled) return null;
+  return <>{info.studentNotes?.filter((note) => !courseKey || note.courseKeys.includes(courseKey))
+    .map((note) => <p className="class-mismatch" key={note.courseKeys.join(",")}>{note.message}</p>)}</>;
 }
 
 export default function Home() {
@@ -1467,6 +1475,7 @@ export default function Home() {
             </summary>
             <div className="disclosure-body">
               <p>{classLookupMessage}</p>
+              <CourseGuidanceNotes info={departmentGuidance} enabled={classGuidanceInScope} />
               {classLookup.blockedKeys.length > 0 && (
                 <p className="class-mismatch">手動確認が必要：{classLookup.blockedKeys.join("、")}</p>
               )}
@@ -1953,6 +1962,7 @@ export default function Home() {
               </label>
             )}
             <small>{classGuidanceInScope ? "リンクを開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
+            {classGuidanceInScope && departmentGuidance.studentNotes?.length ? <small>科目ごとの注意に別の配布資料が指定されている場合は、その資料とも照合してください。</small> : null}
           </div>
 
           {requiredInOtherSemesters.length > 0 && (
@@ -2247,6 +2257,7 @@ export default function Home() {
             </div>
             {detailCourse.slots.length > 1 && <div className="set-callout"><strong>セット開講科目</strong><p>{slotLabel(detailCourse)}をまとめて登録します。</p></div>}
             {detailCourse.restriction && <div className="restriction-block"><strong>履修制限・対象</strong><p>{detailCourse.restriction}</p></div>}
+            <CourseGuidanceNotes info={departmentGuidance} courseKey={detailCourse.key} enabled={classGuidanceInScope && detailCourse.year === year} />
             {isFallCalculusRetakeCourse(detailCourse) && <div className="restriction-block"><strong>後期は再履修対象者のみ</strong><p>前期に微分積分学Iを履修して単位を取得できなかった学生のみ選択できます。画面の「微分積分学Iの後期再履修」で対象であることを確認してください。</p></div>}
             <div className="syllabus-search-note">
               <span>シラバスで検索する講義名</span>
@@ -2282,6 +2293,7 @@ export default function Home() {
             <button className="modal-close" onClick={() => setClassChoice(null)} aria-label="閉じる">×</button>
             <p className="eyebrow">CHOOSE A CLASS</p>
             <h2 id="class-choice-title">{classChoice.course.baseTitle}のクラス{classChoice.replacingId ? "変更" : "選択"}</h2>
+            <CourseGuidanceNotes info={departmentGuidance} courseKey={classChoice.course.key} enabled={classGuidanceInScope && classChoice.course.year === year} />
             {classChoiceSelection.recommended ? (
               <div className="class-choice-recommendation">
                 <strong>学籍番号による指定クラス</strong>

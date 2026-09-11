@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import courseDataJson from "./data/course-data.json";
 import updateInfoJson from "./data/update-info.json";
 import updateHistoryJson from "./data/update-history.json";
 import guidanceJson from "./data/department-guidance.json";
-import { lookupClasses, type DepartmentGuidance, type GuidanceData } from "./class-guidance";
+import { getClassTableLinks, lookupClasses, type DepartmentGuidance, type GuidanceData } from "./class-guidance";
 import { belongsToSemester, deriveRequiredSelection, quarterLabel, semesterQuarterLabel } from "./required-selection";
 import { isCourseCompatible } from "./course-compatibility";
 import { buildCourseClassSelection } from "./course-class-selection";
 import { planRequiredAutoPlacement } from "./required-auto-placement";
-import { areCalculusRetakePair, effectiveCapLimit, enrollmentEligibilityIssue, isCapRelaxationEligible, isFallCalculusRetakeCourse, normalizeCapLimits } from "./enrollment-eligibility";
+import { effectiveCapLimit, enrollmentEligibilityIssue, isCapRelaxationEligible, isFallCalculusRetakeCourse, normalizeCapLimits } from "./enrollment-eligibility";
 import { buildQuarterTimetable, outputScopeLabel, quartersForOutput, type TimetableOutputScope } from "./schedule-output";
 import { drawScheduleImage, SCHEDULE_IMAGE_PRESETS } from "./schedule-image";
+import { shouldWarnCap, type CapSnapshot } from "./cap-warning";
+import { conflictMessage, detectedScheduleIssues as getDetectedScheduleIssues } from "./schedule-conflicts";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
 type Semester = "spring" | "fall";
@@ -193,14 +195,6 @@ function courseCredits(course: Course, department: string) {
   return course.creditsByDepartment[department] ?? course.defaultCredits;
 }
 
-function quartersOverlap(a: Course, b: Course) {
-  return a.quarters.some((quarter) => b.quarters.includes(quarter));
-}
-
-function isPhysicalCampus(campus: string) {
-  return campus === "実籾" || campus === "津田沼";
-}
-
 function isCapExempt(course: Course) {
   return course.term.includes("集中") || capExemptKeys.has(course.key);
 }
@@ -227,35 +221,6 @@ function intensiveTimingLabel(course: Course) {
   return "実施時期は要確認";
 }
 
-function conflictMessage(course: Course, selected: Course[], calculusRetakeConfirmed = false) {
-  if (selected.some((item) => item.key === course.key && !(calculusRetakeConfirmed && areCalculusRetakePair(course, item)))) {
-    return "同じ科目がすでに選択されています。";
-  }
-
-  for (const existing of selected) {
-    if (!quartersOverlap(course, existing)) continue;
-    for (const slot of course.slots) {
-      for (const existingSlot of existing.slots) {
-        if (slot.day !== existingSlot.day) continue;
-        if (slot.period === existingSlot.period) {
-          return `${slot.label}は「${existing.title}」と重なっています。`;
-        }
-        if (
-          Math.abs(slot.period - existingSlot.period) === 1 &&
-          isPhysicalCampus(course.campus) &&
-          isPhysicalCampus(existing.campus) &&
-          course.campus !== existing.campus
-        ) {
-          const earlierPeriod = Math.min(slot.period, existingSlot.period);
-          const laterPeriod = Math.max(slot.period, existingSlot.period);
-          return `${slot.day}曜日${earlierPeriod}・${laterPeriod}限で、「${existing.title}」（${existing.campus}）と「${course.title}」（${course.campus}）のキャンパス間移動が生じます。`;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function slotLabel(course: Course) {
   return course.slots.length
     ? course.slots.map((slot) => slot.label).join("・")
@@ -280,6 +245,17 @@ function FirstYearMaterialLink({ enabled, href, className, children, onOpen, lab
   );
 }
 
+function ClassTableLinks({ info, courseKeys, enabled, onOpen }: {
+  info: DepartmentGuidance; courseKeys: string[]; enabled: boolean; onOpen: (url: string) => void;
+}) {
+  return <>{getClassTableLinks(info, courseKeys).map(({ url, courseKeys: keys }) => (
+    <FirstYearMaterialLink key={url} enabled={enabled} className="class-table-button" href={url} onOpen={() => onOpen(url)}>
+      {url !== info.classTableUrl && <small>{keys.join("・")}</small>}
+      {enabled ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
+    </FirstYearMaterialLink>
+  ))}</>;
+}
+
 function CourseGuidanceNotes({ info, courseKey, enabled }: {
   info: DepartmentGuidance; courseKey?: string; enabled: boolean;
 }) {
@@ -296,7 +272,7 @@ export default function Home() {
   const [scheduleView, setScheduleView] = useState<ScheduleView>("quarter");
   const [textSize, setTextSize] = useState<TextSize>("normal");
   const [studentNumber, setStudentNumber] = useState("");
-  const [openedClassContext, setOpenedClassContext] = useState<string | null>(null);
+  const [openedClassContext, setOpenedClassContext] = useState<{ context: string; urls: string[] } | null>(null);
   const [confirmedClassContext, setConfirmedClassContext] = useState<string | null>(null);
   const [toeicExempt, setToeicExempt] = useState(false);
   const [retakePriority, setRetakePriority] = useState(false);
@@ -321,6 +297,8 @@ export default function Home() {
   const [specialSearch, setSpecialSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
+  const [capWarning, setCapWarning] = useState<CapSnapshot | null>(null);
+  const previousCapSnapshot = useRef<CapSnapshot | null>(null);
   const [lastBlockedIssue, setLastBlockedIssue] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
@@ -391,6 +369,10 @@ export default function Home() {
     selectedCourses.filter(courseBelongsToActiveSemester).map((course) => course.id).sort(),
   ]);
   const classGuidanceInScope = classLookup.status !== "out-of-scope";
+  function recordClassTableOpen(url: string) {
+    setOpenedClassContext((current) => ({ context: classContext,
+      urls: [...new Set([...(current?.context === classContext ? current.urls : []), url])] }));
+  }
   useEffect(() => { setClassChoice(null); }, [department, year, semester, studentNumber]);
   useEffect(() => { setCalculusRetakeConfirmed(false); }, [department, year, studentNumber]);
   const classTableConfirmed = classGuidanceInScope && confirmedClassContext === classContext;
@@ -747,6 +729,11 @@ export default function Home() {
   const selectedElectiveChoices = selectedCourses.filter((course) => courseBelongsToActiveSemester(course) &&
     !requiredForProfile.some((required) => required.key === course.key) && classSelectionFor(course).isClassDivided);
 
+  const verificationCourseKeys = [...selectedRequiredChoices.map(({ course }) => course.key), ...selectedElectiveChoices.map((course) => course.key)];
+  const verificationTableLinks = getClassTableLinks(departmentGuidance, verificationCourseKeys);
+  const allClassTablesOpened = openedClassContext?.context === classContext &&
+    verificationTableLinks.every(({ url }) => openedClassContext.urls.includes(url));
+
   const halfCourses = selectedCourses.filter((course) =>
     courseBelongsToActiveSemester(course),
   );
@@ -763,42 +750,18 @@ export default function Home() {
   const capRelaxationEligible = isCapRelaxationEligible(year);
   const capLimit = effectiveCapLimit(year, capLimits[semester]);
   const capExceeded = capCredits > capLimit;
+  useEffect(() => {
+    if (!hydrated) return;
+    const next: CapSnapshot = { context: `${department}:${year}`, semester, credits: capCredits, limit: capLimit };
+    const warn = shouldWarnCap(previousCapSnapshot.current, next);
+    previousCapSnapshot.current = next;
+    setCapWarning((current) => next.credits <= next.limit ? null : warn || current ? next : null);
+  }, [hydrated, department, year, semester, capCredits, capLimit]);
   const calculusRetakeCandidates = compatibleCourses.filter(isFallCalculusRetakeCourse);
   const selectedCalculusRetakes = selectedCourses.filter(isFallCalculusRetakeCourse);
   const unconfirmedRetakes = selectedCalculusRetakes.filter((course) => enrollmentEligibilityIssue(course, calculusRetakeConfirmed));
 
-  const detectedScheduleIssues = (() => {
-    const issues: string[] = [];
-    for (let index = 0; index < halfCourses.length; index += 1) {
-      for (let nextIndex = index + 1; nextIndex < halfCourses.length; nextIndex += 1) {
-        const first = halfCourses[index];
-        const second = halfCourses[nextIndex];
-        if (!quartersOverlap(first, second)) continue;
-        if (first.key === second.key) {
-          issues.push(`「${first.title}」が重複して登録されています。`);
-          continue;
-        }
-        for (const firstSlot of first.slots) {
-          for (const secondSlot of second.slots) {
-            if (firstSlot.day !== secondSlot.day) continue;
-            if (firstSlot.period === secondSlot.period) {
-              issues.push(`${firstSlot.label}で「${first.title}」と「${second.title}」が重複しています。`);
-            } else if (
-              Math.abs(firstSlot.period - secondSlot.period) === 1 &&
-              isPhysicalCampus(first.campus) &&
-              isPhysicalCampus(second.campus) &&
-              first.campus !== second.campus
-            ) {
-              issues.push(
-                `${firstSlot.day}曜日${Math.min(firstSlot.period, secondSlot.period)}・${Math.max(firstSlot.period, secondSlot.period)}限で、「${first.title}」（${first.campus}）と「${second.title}」（${second.campus}）のキャンパス間移動が生じています。`,
-              );
-            }
-          }
-        }
-      }
-    }
-    return [...new Set(issues)];
-  })();
+  const detectedScheduleIssues = getDetectedScheduleIssues(halfCourses);
 
   const automaticErrorCount =
     (capExceeded ? 1 : 0) + detectedScheduleIssues.length + unconfirmedRetakes.length + (lastBlockedIssue ? 1 : 0);
@@ -1489,11 +1452,7 @@ export default function Home() {
                   <li key={course.id}>【{isCurriculumRequired(course) ? "必修" : "選択・自動配置対象外"}】{course.baseTitle}：公式表では{semesterQuarterLabel(course)}（{classLabel} · {slotLabel(course)}）</li>
                 ))}</ul>
               )}
-              <FirstYearMaterialLink enabled={classGuidanceInScope}
-                className="class-table-button" href={departmentGuidance.classTableUrl}
-                onOpen={() => setOpenedClassContext(classContext)}>
-                {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
-              </FirstYearMaterialLink>
+              <ClassTableLinks info={departmentGuidance} enabled={classGuidanceInScope} courseKeys={departmentGuidance.coveredCourseKeys ?? []} onOpen={recordClassTableOpen} />
               <small>科目ごとにクラスが異なる場合があります。自動選択後も、公式表でご自身の学籍番号・科目・担当教員を照合してください。</small>
             </div>
           </details>
@@ -1948,20 +1907,16 @@ export default function Home() {
 
           <div className="class-verification">
             <strong>{!classGuidanceInScope ? "対象学年のクラスを確認してください" : classTableConfirmed ? "公式表で確認済み（自己確認）" : "クラス分け表で要確認"}</strong>
-            <FirstYearMaterialLink enabled={classGuidanceInScope}
-              className="class-table-button" href={departmentGuidance.classTableUrl}
-              onOpen={() => setOpenedClassContext(classContext)}>
-              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
-            </FirstYearMaterialLink>
+            <ClassTableLinks info={departmentGuidance} enabled={classGuidanceInScope} courseKeys={verificationCourseKeys} onOpen={recordClassTableOpen} />
             {classGuidanceInScope && selectedRequiredChoices.length + selectedElectiveChoices.length > 0 && (
               <label>
                 <input type="checkbox" checked={classTableConfirmed}
-                  disabled={openedClassContext !== classContext && !classTableConfirmed}
+                  disabled={!allClassTablesOpened && !classTableConfirmed}
                   onChange={(event) => setConfirmedClassContext(event.target.checked ? classContext : null)} />
                 現在の学期で選択済みのクラスを公式表と照合しました
               </label>
             )}
-            <small>{classGuidanceInScope ? "リンクを開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
+            <small>{classGuidanceInScope ? "表示された資料リンクをすべて開き、内容を照合してからチェックしてください。学籍番号・学期・科目の選択を変えると再確認が必要です。" : "掲載先は1年生向けです。上級年次や再履修のクラスは対象学年の履修案内・学科の指示を確認してください。"}</small>
             {classGuidanceInScope && departmentGuidance.studentNotes?.length ? <small>科目ごとの注意に別の配布資料が指定されている場合は、その資料とも照合してください。</small> : null}
           </div>
 
@@ -2112,9 +2067,7 @@ export default function Home() {
                   </div>
                 </article>
               ))}
-              <FirstYearMaterialLink enabled={classGuidanceInScope} className="class-table-button" href={departmentGuidance.classTableUrl} onOpen={() => setOpenedClassContext(classContext)}>
-                {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
-              </FirstYearMaterialLink>
+              <ClassTableLinks info={departmentGuidance} enabled={classGuidanceInScope} courseKeys={electiveClassGroups.map(({ course }) => course.key)} onOpen={recordClassTableOpen} />
             </section>
           )}
         </aside>
@@ -2225,6 +2178,22 @@ export default function Home() {
         </div>
       )}
 
+      {capWarning && !blockingError && (
+        <div className="blocking-error-backdrop">
+          <section className="blocking-error-dialog cap-warning-dialog" role="alertdialog" aria-modal="true" aria-labelledby="cap-warning-title" aria-describedby="cap-warning-description">
+            <span className="blocking-error-icon" aria-hidden="true">!</span>
+            <p className="eyebrow">CAP LIMIT</p>
+            <h2 id="cap-warning-title">{semesterDetails[capWarning.semester].label}のCAP上限を超えています</h2>
+            <div id="cap-warning-description" className="blocking-error-message">
+              CAP算入：{capWarning.credits}単位 ／ 上限：{capWarning.limit}単位<br />
+              <strong>{capWarning.credits - capWarning.limit}単位超過しています。</strong>
+            </div>
+            <p className="cap-warning-help">履修案は保持しています。選択科目とCAP設定を確認し、上限内になるように調整してください。</p>
+            <button className="primary-button" autoFocus onClick={() => setCapWarning(null)}>内容を確認して履修案を見直す</button>
+          </section>
+        </div>
+      )}
+
       {blockingError && (
         <div className="blocking-error-backdrop">
           <section className="blocking-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="blocking-error-title">
@@ -2256,6 +2225,7 @@ export default function Home() {
               <div><span>開講学年・教室</span><strong>{detailCourse.year ?? "?"}年次 · {detailCourse.room || "未記載"}</strong></div>
             </div>
             {detailCourse.slots.length > 1 && <div className="set-callout"><strong>セット開講科目</strong><p>{slotLabel(detailCourse)}をまとめて登録します。</p></div>}
+            {classSelectionFor(detailCourse).isClassDivided && <ClassTableLinks info={departmentGuidance} enabled={classGuidanceInScope} courseKeys={[detailCourse.key]} onOpen={recordClassTableOpen} />}
             {detailCourse.restriction && <div className="restriction-block"><strong>履修制限・対象</strong><p>{detailCourse.restriction}</p></div>}
             <CourseGuidanceNotes info={departmentGuidance} courseKey={detailCourse.key} enabled={classGuidanceInScope && detailCourse.year === year} />
             {isFallCalculusRetakeCourse(detailCourse) && <div className="restriction-block"><strong>後期は再履修対象者のみ</strong><p>前期に微分積分学Iを履修して単位を取得できなかった学生のみ選択できます。画面の「微分積分学Iの後期再履修」で対象であることを確認してください。</p></div>}
@@ -2321,9 +2291,7 @@ export default function Home() {
               <p className="class-choice-term-notice">このクラスは{semesterQuarterLabel(chosenClass)}です。{classChoice.replacingId ? "変更" : "追加"}後に、その学期の時間割へ切り替わります。</p>
             )}
             {chosenClass.restriction && <div className="restriction-block"><strong>履修制限・対象</strong><p>{chosenClass.restriction}</p></div>}
-            <FirstYearMaterialLink enabled={classGuidanceInScope} className="class-table-button" href={departmentGuidance.classTableUrl} onOpen={() => setOpenedClassContext(classContext)}>
-              {classGuidanceInScope ? "クラス分け表で正しいクラスか確認する ↗" : "クラス分け表は1年生のみ利用できます"}
-            </FirstYearMaterialLink>
+            <ClassTableLinks info={departmentGuidance} enabled={classGuidanceInScope} courseKeys={[chosenClass.key]} onOpen={recordClassTableOpen} />
             <p>科目・開講Q・担当教員をご自身で確認してください。追加・変更後も公式表の確認が必要です。</p>
             <div className="modal-actions">
               <button className="soft-button" onClick={() => setClassChoice(null)}>キャンセル</button>

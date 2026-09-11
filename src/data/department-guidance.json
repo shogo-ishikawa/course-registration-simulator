@@ -5254,7 +5254,8 @@
           "title": "2026 後期 1年生ガイダンス資料：生産工学実習と電気数学1の履修について",
           "file": "① 2026_後期_生産工学実習と電気数学１の履修について.pdf",
           "sha256": "e12854d2df10d5e6c1f5d2c11cdc26988e5befdeea5c925d81b1fa321e5d6b45",
-          "verifiedAt": "2026-09-11"
+          "verifiedAt": "2026-09-11",
+          "url": "https://nihon-u.box.com/s/2fdl33i55wkl36mi2p356s0p2iamiien"
         }
       },
       "studentNotes": [
@@ -5271,7 +5272,12 @@
           ],
           "message": "電気数学Ⅰは、後期ガイダンス配布資料「生産工学実習と電気数学1の履修について」の2ページで、自分の学籍番号と開講Qを確認してください。番号が掲載されていない場合は自動判定しません。担当教員に確認してから手動でクラスを選択してください。"
         }
-      ]
+      ],
+      "courseClassTableUrls": {
+        "生産工学実習A": "https://nihon-u.box.com/s/2fdl33i55wkl36mi2p356s0p2iamiien",
+        "生産工学実習B": "https://nihon-u.box.com/s/2fdl33i55wkl36mi2p356s0p2iamiien",
+        "電気数学I": "https://nihon-u.box.com/s/2fdl33i55wkl36mi2p356s0p2iamiien"
+      }
     },
     "土木": {
       "guidanceUrl": "https://sites.google.com/view/mimomi-guidance/home/civil_engr",

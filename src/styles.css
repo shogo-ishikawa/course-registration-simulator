@@ -169,6 +169,7 @@ a.department-guidance-link:hover { border-color: #628ad6; background: #e8f0ff; }
 .class-guidance ul { padding-left: 20px; }
 .class-guidance small, .class-verification small { display: block; margin-top: 9px; font-size: .875rem; line-height: 1.65; }
 .class-table-button { display: block; width: 100%; margin-top: 10px; padding: 12px; min-height: 44px; border: 1px solid #977033; border-radius: 8px; color: #573904; background: white; font-size: .875rem; font-weight: 800; line-height: 1.6; text-align: center; }
+.class-table-button > small { display: block; margin-bottom: 4px; line-height: 1.5; }
 a.class-table-button:hover { background: #fff1ce; }
 .department-guidance-link:disabled, .class-table-button:disabled { color: #566174; background: #eef1f5; border-color: #bdc5d0; cursor: not-allowed; opacity: 1; }
 .department-guidance-link:disabled span, .department-guidance-link:disabled small { color: #566174; }
@@ -503,6 +504,9 @@ a.class-table-button:hover { background: #fff1ce; }
 .blocking-error-message { margin-top: 16px; padding: 15px; border: 2px solid #e7b0b0; border-radius: 11px; color: #8b2424; background: #fff2f2; font-size: 14px; font-weight: 900; line-height: 1.6; }
 .blocking-error-help { margin: 13px 0 20px; color: #647185; font-size: 10px; line-height: 1.7; }
 .blocking-error-dialog .primary-button { min-width: 210px; }
+.cap-warning-help { margin: 18px 0 22px; color: #4e5b6e; font-size: 15px; line-height: 1.8; }
+.cap-warning-dialog { max-height: calc(100dvh - 40px); overflow-y: auto; }
+.cap-warning-dialog .primary-button { min-width: 0; width: 100%; }
 .course-drawer { position: absolute; top: 0; right: 0; width: min(560px, 100%); height: 100%; padding: 28px; overflow: auto; background: white; box-shadow: -20px 0 60px rgba(4,16,34,.25); }
 .drawer-header { display: flex; align-items: start; justify-content: space-between; }
 .drawer-header h2 { margin: 5px 0 0; font-size: 24px; }

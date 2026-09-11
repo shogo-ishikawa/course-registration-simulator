@@ -21,6 +21,8 @@ export type ClassRule = {
 export type DepartmentGuidance = {
   guidanceUrl: string;
   classTableUrl: string;
+  // Some subjects have a separate official class table for this department.
+  courseClassTableUrls?: Record<string, string>;
   targetYear: number;
   verifiedAt: string | null;
   rules: ClassRule[];
@@ -33,6 +35,7 @@ export type DepartmentGuidance = {
     kind: "pdf" | "instructor-instruction";
     title: string;
     verifiedAt: string;
+    url?: string;
     file?: string;
     sha256?: string;
   }>;
@@ -45,6 +48,23 @@ export type GuidanceData = {
   linksCheckedAt: string;
   departments: Record<string, DepartmentGuidance>;
 };
+
+export function getClassTableUrl(info: DepartmentGuidance | undefined, courseKey?: string) {
+  return (courseKey ? info?.courseClassTableUrls?.[courseKey] : undefined) || info?.classTableUrl;
+}
+
+/** A group may span the general table and a subject-specific document. */
+export function getClassTableLinks(info: DepartmentGuidance | undefined, courseKeys: readonly string[]) {
+  const links = new Map<string, { url: string; courseKeys: string[] }>();
+  for (const courseKey of courseKeys.length ? courseKeys : [undefined]) {
+    const url = getClassTableUrl(info, courseKey);
+    if (!url) continue;
+    const link = links.get(url) ?? { url, courseKeys: [] };
+    if (courseKey && !link.courseKeys.includes(courseKey)) link.courseKeys.push(courseKey);
+    links.set(url, link);
+  }
+  return [...links.values()];
+}
 
 type Candidate = {
   id: string;

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { applyCourseCreditOverrides } from "./course-credit-overrides.mjs";
 
 const inputPath = process.argv[2];
 const courseDataPath = "src/data/course-data.json";
@@ -164,7 +165,8 @@ for (const [code, rows] of grouped) {
     ? "オンデマンド"
     : rawCampus;
   const yearMatch = first.installedYear.normalize("NFKC").match(/[1-4]/);
-  const credit = creditByKey.get(key) || { byDepartment: {}, defaultCredits: null };
+  const credit = applyCourseCreditOverrides(key,
+    creditByKey.get(key) || { byDepartment: {}, defaultCredits: null }, Object.keys(current.departments));
   courses.push({
     id: code,
     title: first.title,

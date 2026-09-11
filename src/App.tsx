@@ -12,6 +12,7 @@ import { effectiveCapLimit, enrollmentEligibilityIssue, isCapRelaxationEligible,
 import { buildQuarterTimetable, outputScopeLabel, quartersForOutput, type TimetableOutputScope } from "./schedule-output";
 import { drawScheduleImage, SCHEDULE_IMAGE_PRESETS } from "./schedule-image";
 import { shouldWarnCap, type CapSnapshot } from "./cap-warning";
+import { newlyUnknownCreditIds, type UnknownCreditSnapshot } from "./unknown-credit-warning";
 import { conflictMessage, detectedScheduleIssues as getDetectedScheduleIssues } from "./schedule-conflicts";
 
 type Day = "月" | "火" | "水" | "木" | "金" | "土";
@@ -299,6 +300,8 @@ export default function Home() {
   const [blockingError, setBlockingError] = useState<BlockingError | null>(null);
   const [capWarning, setCapWarning] = useState<CapSnapshot | null>(null);
   const previousCapSnapshot = useRef<CapSnapshot | null>(null);
+  const [unknownCreditWarningIds, setUnknownCreditWarningIds] = useState<string[]>([]);
+  const previousUnknownCredits = useRef<UnknownCreditSnapshot | null>(null);
   const [lastBlockedIssue, setLastBlockedIssue] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [updateHistoryOpen, setUpdateHistoryOpen] = useState(false);
@@ -738,6 +741,21 @@ export default function Home() {
     courseBelongsToActiveSemester(course),
   );
   const unknownCreditCourses = halfCourses.filter((course) => courseCredits(course, department) === null);
+  const unknownCreditIdsKey = JSON.stringify(unknownCreditCourses.map((course) => course.id));
+  useEffect(() => {
+    if (!hydrated) return;
+    const next: UnknownCreditSnapshot = {
+      context: `${department}:${year}`, semester, courseIds: JSON.parse(unknownCreditIdsKey),
+    };
+    const previous = previousUnknownCredits.current;
+    const addedIds = newlyUnknownCreditIds(previous, next);
+    previousUnknownCredits.current = next;
+    setUnknownCreditWarningIds((current) => {
+      const retained = previous?.context === next.context && previous.semester === next.semester ? current : [];
+      return [...new Set([...retained, ...addedIds])].filter((id) => next.courseIds.includes(id));
+    });
+  }, [hydrated, department, year, semester, unknownCreditIdsKey]);
+  const unknownCreditWarningCourses = unknownCreditCourses.filter((course) => unknownCreditWarningIds.includes(course.id));
   const totalCredits = halfCourses.reduce(
     (sum, course) => sum + (courseCredits(course, department) ?? 0),
     0,
@@ -1584,7 +1602,8 @@ export default function Home() {
           {unknownCreditCourses.length > 0 && (
             <article className="check-result warning">
               <span>単位</span>
-              <div><strong>単位数を確認できない科目があります</strong><p>{unknownCreditCourses.slice(0, 4).map((course) => course.title).join("、")}{unknownCreditCourses.length > 4 ? ` ほか${unknownCreditCourses.length - 4}科目` : ""}</p></div>
+              <div><strong>授業科目表で単位数を確認してください</strong><p>{unknownCreditCourses.slice(0, 4).map((course) => course.title).join("、")}{unknownCreditCourses.length > 4 ? ` ほか${unknownCreditCourses.length - 4}科目` : ""}</p><p>単位数が未設定のため、これらの科目は合計単位数・CAP算入単位数に含まれていません。授業科目表で確認し、CAP対象科目の単位数を加えて上限内か確認してください。</p></div>
+              <button onClick={() => setUnknownCreditWarningIds(unknownCreditCourses.map((course) => course.id))}>対象科目を確認</button>
             </article>
           )}
           {!automaticErrorCount && !automaticWarningCount && (
@@ -2175,6 +2194,24 @@ export default function Home() {
               {!slotCandidates.length && <div className="empty-results"><strong>候補が見つかりません</strong><p>学科・開講期間・履修制限または検索条件を確認してください。</p></div>}
             </div>
           </aside>
+        </div>
+      )}
+
+      {unknownCreditWarningCourses.length > 0 && !capWarning && !blockingError && (
+        <div className="blocking-error-backdrop">
+          <section className="blocking-error-dialog cap-warning-dialog unknown-credit-dialog" role="alertdialog" aria-modal="true" aria-labelledby="unknown-credit-title" aria-describedby="unknown-credit-description">
+            <span className="blocking-error-icon" aria-hidden="true">!</span>
+            <p className="eyebrow">CREDIT CHECK</p>
+            <h2 id="unknown-credit-title">授業科目表で単位数を確認してください</h2>
+            <div id="unknown-credit-description" className="blocking-error-message">
+              選択した科目の単位数が、このシミュレータでは未設定です。ご自身の入学年度・学科の授業科目表で、単位数とCAPへの算入対象かどうかを確認してください。
+            </div>
+            <ul className="unknown-credit-course-list">
+              {unknownCreditWarningCourses.map((course) => <li key={course.id}><strong>{course.title}</strong><span>講義コード：{course.id} · {quarterLabel(course)}</span></li>)}
+            </ul>
+            <p className="cap-warning-help">履修案には追加されていますが、これらの科目は合計単位数・CAP算入単位数に含まれていません。CAP対象科目の単位数を加えて、上限内か確認してください。</p>
+            <button className="primary-button" autoFocus onClick={() => setUnknownCreditWarningIds([])}>内容を確認しました</button>
+          </section>
         </div>
       )}
 

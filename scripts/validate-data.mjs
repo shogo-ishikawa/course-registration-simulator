@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { isIntroductoryForeignLanguage } from "./course-credit-overrides.mjs";
 
 const courseData = JSON.parse(await fs.readFile("src/data/course-data.json", "utf8"));
 const updateInfo = JSON.parse(await fs.readFile("src/data/update-info.json", "utf8"));
@@ -14,11 +15,19 @@ for (const course of courseData.courses || []) {
   if (!course.id || !course.title) errors.push("IDまたは科目名がない科目があります");
   if (ids.has(course.id)) errors.push(`講義コードが重複しています: ${course.id}`);
   ids.add(course.id);
+  if (isIntroductoryForeignLanguage(course.key) && (course.defaultCredits !== 1 ||
+    Object.keys(courseData.departments).some((department) => course.creditsByDepartment?.[department] !== 1))) {
+    errors.push(`初習外国語は全学科で1単位です: ${course.id}`);
+  }
   for (const slot of course.slots || []) {
     if (!"月火水木金土".includes(slot.day) || !Number.isInteger(slot.period)) {
       errors.push(`曜日時限が不正です: ${course.id}`);
     }
   }
+}
+
+if (courseData.meta?.coverage?.sectionsWithCredits !== courseData.courses.filter((course) => course.defaultCredits !== null).length) {
+  errors.push("単位数の設定済み講義数とcoverageが一致しません");
 }
 
 for (const key of ["appUpdatedAt", "timetableUpdatedAt"]) {

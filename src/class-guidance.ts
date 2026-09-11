@@ -14,6 +14,8 @@ export type ClassRule = {
   campus?: string;
   room?: string;
   sourcePage?: number;
+  // Omitted for rules from the department's original sourceFile.
+  sourceId?: string;
 };
 
 export type DepartmentGuidance = {
@@ -27,6 +29,14 @@ export type DepartmentGuidance = {
   coveredCourseKeys?: string[];
   sourceFile?: string;
   sourceSha256?: string;
+  sources?: Record<string, {
+    kind: "pdf" | "instructor-instruction";
+    title: string;
+    verifiedAt: string;
+    file?: string;
+    sha256?: string;
+  }>;
+  studentNotes?: { courseKeys: string[]; message: string }[];
   reviewNotes?: { courseKey: string; reason: string; sourcePage: number }[];
 };
 
